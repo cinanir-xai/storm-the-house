@@ -156,13 +156,22 @@ def _sun_position(t: float) -> tuple[int, int]:
 class SkyRenderer:
     """Manages dynamic sky gradient, moving sun, and cloud layer."""
 
-    def __init__(self):
+    def __init__(self, has_clouds: bool = True):
         self.horizon_y = int(SCREEN_HEIGHT * HORIZON_Y_RATIO)
         self._gradient_surf = pygame.Surface(
             (SCREEN_WIDTH, self.horizon_y), pygame.SRCALPHA)
-        self._clouds: list[_Cloud] = [_Cloud() for _ in range(NUM_CLOUDS)]
+        # 50% chance of having clouds on any given day
+        self._has_clouds = has_clouds and random.random() < 0.5
+        initial_clouds = NUM_CLOUDS if self._has_clouds else 0
+        self._clouds: list[_Cloud] = [_Cloud() for _ in range(initial_clouds)]
         self._last_top: tuple | None = None
         self._last_hor: tuple | None = None
+
+    def set_cloudy(self, has_clouds: bool):
+        """Set whether this day has clouds."""
+        self._has_clouds = has_clouds and random.random() < 0.5
+        if not self._has_clouds:
+            self._clouds = []
 
     # ── gradient cache ────────────────────────────────────────────────────
 
@@ -184,6 +193,8 @@ class SkyRenderer:
     # ── tick ──────────────────────────────────────────────────────────────
 
     def update(self, dt: float):
+        if not self._has_clouds:
+            return
         for c in self._clouds:
             c.update(dt)
         self._clouds = [c for c in self._clouds if not c.off_screen]

@@ -57,9 +57,9 @@ class GameScene:
                  weapon_manager: WeaponManager | None = None,
                  upgrades: UpgradeState | None = None):
         self.day = day
-        self.sky = SkyRenderer()
+        self.sky = SkyRenderer()  # 50% chance of clouds built-in
         self.ground = GroundRenderer()
-        self.background = BackgroundRenderer()
+        self.background = BackgroundRenderer()  # Random vegetation each day
 
         # Reuse house / weapon manager across days so HP and ammo persist
         self.house = house if house is not None else House()
@@ -118,6 +118,13 @@ class GameScene:
 
         # Last frame snapshot for EOD background
         self.last_frame: pygame.Surface | None = None
+
+        # Weapon animation state
+        self._weapon_fire_timer = 0.0
+        self._weapon_fire_duration = 0.15
+        self._ejected_shells: list[tuple[float, float, float, float, float]] = []  # x, y, vx, vy, rotation
+        self._shotgun_pump_offset = 0.0
+        self._shotgun_pump_direction = 0  # 0 = idle, 1 = back, -1 = forward
 
         # Reload key held state for shotgun
         self._reload_key_held: bool = False
@@ -212,6 +219,21 @@ class GameScene:
             hit = self._process_pellet(pellet_x, pellet_y, weapon.damage)
             if not hit and pellet_y > self._horizon_y:
                 self.particles.emit_dust(pellet_x, pellet_y)
+
+        # Trigger weapon fire animation
+        self._weapon_fire_timer = self._weapon_fire_duration
+
+        # Eject shell for appropriate weapons
+        wx = SCREEN_WIDTH - 220 + 40
+        wy = SCREEN_HEIGHT - 180 + 30
+        if weapon.weapon_type == "pistol":
+            self._ejected_shells.append((wx + 30, wy - 10, -80, -120, 0))
+        elif weapon.weapon_type == "assault_rifle":
+            self._ejected_shells.append((wx + 35, wy - 5, -100, -100, 0))
+        elif weapon.weapon_type == "shotgun":
+            self._ejected_shells.append((wx + 20, wy - 5, -60, -80, 0))
+            self._shotgun_pump_direction = 1  # Start pump back
+            self._shotgun_pump_offset = 0
 
     def _process_pellet(self, px: int, py: int, damage: int) -> bool:
         """Process a single pellet hit. Returns True if something was hit."""
@@ -350,6 +372,33 @@ class GameScene:
         self.enemy_manager.update(dt)
         self.weapon_manager.update(dt)
         self.particles.update(dt)
+
+        # Update weapon fire animation
+        if self._weapon_fire_timer > 0:
+            self._weapon_fire_timer -= dt
+
+        # Update ejected shells
+        new_shells = []
+        for sx, sy, svx, svy, sr in self._ejected_shells:
+            svy += 400 * dt  # gravity
+            sx += svx * dt
+            sy += svy * dt
+            sr += 300 * dt  # rotation
+            if sy < SCREEN_HEIGHT + 50:
+                new_shells.append((sx, sy, svx, svy, sr))
+        self._ejected_shells = new_shells
+
+        # Update shotgun pump animation
+        if self._shotgun_pump_direction != 0:
+            if self._shotgun_pump_direction == 1:
+                self._shotgun_pump_offset += 200 * dt
+                if self._shotgun_pump_offset >= 25:
+                    self._shotgun_pump_direction = -1
+            else:
+                self._shotgun_pump_offset -= 200 * dt
+                if self._shotgun_pump_offset <= 0:
+                    self._shotgun_pump_offset = 0
+                    self._shotgun_pump_direction = 0
 
         self._process_enemy_shots()
 
@@ -529,11 +578,15 @@ class GameScene:
 
         # Draw semi-transparent background panel
         panel_w = 200
-        panel_h = 120
+        panel_h = 130
         panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
-        pygame.draw.rect(panel, (0, 0, 0, 128), panel.get_rect(), border_radius=8)
-        pygame.draw.rect(panel, (60, 55, 50, 180), panel.get_rect(), width=2, border_radius=8)
-        surface.blit(panel, (wx - 20, wy - 20))
+        pygame.draw.rect(panel, (0, 0, 0, 140), panel.get_rect(), border_radius=10)
+        pygame.draw.rect(panel, (70, 65, 55, 200), panel.get_rect(), width=2, border_radius=10)
+        # Highlight at top
+        highlight = pygame.Surface((panel_w - 8, 4), pygame.SRCALPHA)
+        highlight.fill((255, 255, 255, 25))
+        panel.blit(highlight, (4, 4))
+        surface.blit(panel, (wx - 20, wy - 25))
 
         if weapon_type == "shotgun":
             self._draw_shotgun_model(surface, wx, wy, weapon)
@@ -543,17 +596,36 @@ class GameScene:
             self._draw_pistol_model(surface, wx, wy, weapon)
 
     def _draw_pistol_model(self, surface: pygame.Surface, x: int, y: int, weapon):
-        """Draw a pistol model."""
-        # Slide (top part)
+        """Draw a pistol model with firing animation."""
+        # Firing animation - slide recoil
+        fire_progress = max(0, self._weapon_fire_timer / self._weapon_fire_duration)
+        slide_recoil = int(12 * fire_progress)
+        tilt_angle = 8 * fire_progress  # degrees
+
+        # Calculate tilted positions
+        tilt_rad = math.radians(tilt_angle)
+
+        # Slide (top part) - with recoil offset
         slide_col = (60, 60, 65)
-        pygame.draw.rect(surface, slide_col, pygame.Rect(x, y, 80, 20), border_radius=2)
+        slide_x = x - slide_recoil
+        pygame.draw.rect(surface, slide_col, pygame.Rect(slide_x, y, 80, 20), border_radius=2)
         # Slide serrations
         for i in range(5):
-            sx = x + 60 + i * 4
+            sx = slide_x + 60 + i * 4
             pygame.draw.line(surface, (45, 45, 50), (sx, y + 2), (sx, y + 18), 1)
 
         # Barrel
-        pygame.draw.rect(surface, (50, 50, 55), pygame.Rect(x + 75, y + 5, 15, 10), border_radius=1)
+        pygame.draw.rect(surface, (50, 50, 55), pygame.Rect(slide_x + 75, y + 5, 15, 10), border_radius=1)
+
+        # Muzzle flash when firing
+        if fire_progress > 0.3:
+            flash_x = slide_x + 90
+            flash_y = y + 10
+            flash_r = int(15 * fire_progress)
+            flash_surf = pygame.Surface((flash_r * 4, flash_r * 4), pygame.SRCALPHA)
+            pygame.draw.circle(flash_surf, (255, 240, 150, 150), (flash_r * 2, flash_r * 2), flash_r)
+            pygame.draw.circle(flash_surf, (255, 255, 200, 200), (flash_r * 2, flash_r * 2), flash_r // 2)
+            surface.blit(flash_surf, (flash_x - flash_r * 2, flash_y - flash_r * 2))
 
         # Frame
         frame_col = (55, 55, 60)
@@ -578,117 +650,171 @@ class GameScene:
         # Magazine
         pygame.draw.rect(surface, (50, 50, 55), pygame.Rect(x + 5, y + 35, 15, 30), border_radius=1)
 
+        # Draw ejected shells
+        self._draw_ejected_shells(surface)
+
     def _draw_shotgun_model(self, surface: pygame.Surface, x: int, y: int, weapon):
-        """Draw an M870-style pump-action shotgun model."""
+        """Draw an M870-style pump-action shotgun model with firing and pump animation."""
+        fire_progress = max(0, self._weapon_fire_timer / self._weapon_fire_duration)
+        recoil_offset = int(10 * fire_progress)
+
         # Barrel (long, top)
         barrel_col = (50, 50, 55)
-        pygame.draw.rect(surface, barrel_col, pygame.Rect(x + 60, y - 10, 100, 12), border_radius=2)
+        pygame.draw.rect(surface, barrel_col, pygame.Rect(x + 60 - recoil_offset, y - 10, 100, 12), border_radius=2)
         # Barrel end
-        pygame.draw.ellipse(surface, (40, 40, 45), pygame.Rect(x + 155, y - 11, 10, 14))
+        pygame.draw.ellipse(surface, (40, 40, 45), pygame.Rect(x + 155 - recoil_offset, y - 11, 10, 14))
 
         # Magazine tube (under barrel)
-        pygame.draw.rect(surface, (55, 55, 60), pygame.Rect(x + 60, y + 2, 90, 8), border_radius=2)
+        pygame.draw.rect(surface, (55, 55, 60), pygame.Rect(x + 60 - recoil_offset, y + 2, 90, 8), border_radius=2)
+
+        # Muzzle flash
+        if fire_progress > 0.3:
+            flash_x = x + 165 - recoil_offset
+            flash_y = y - 4
+            flash_r = int(20 * fire_progress)
+            flash_surf = pygame.Surface((flash_r * 4, flash_r * 4), pygame.SRCALPHA)
+            pygame.draw.circle(flash_surf, (255, 240, 150, 150), (flash_r * 2, flash_r * 2), flash_r)
+            pygame.draw.circle(flash_surf, (255, 255, 200, 200), (flash_r * 2, flash_r * 2), flash_r // 2)
+            surface.blit(flash_surf, (flash_x - flash_r * 2, flash_y - flash_r * 2))
 
         # Receiver (main body)
         receiver_col = (45, 45, 50)
-        pygame.draw.rect(surface, receiver_col, pygame.Rect(x, y, 70, 30), border_radius=3)
+        pygame.draw.rect(surface, receiver_col, pygame.Rect(x - recoil_offset, y, 70, 30), border_radius=3)
         # Ejection port
-        pygame.draw.rect(surface, (30, 30, 35), pygame.Rect(x + 35, y + 3, 20, 12), border_radius=1)
+        pygame.draw.rect(surface, (30, 30, 35), pygame.Rect(x + 35 - recoil_offset, y + 3, 20, 12), border_radius=1)
 
-        # Pump (wooden, under receiver)
+        # Pump (wooden, under receiver) - animated
         pump_col = (110, 70, 40)
-        pump_offset = 5 if hasattr(weapon, '_is_pumping') and weapon._is_pumping else 0
-        pygame.draw.rect(surface, pump_col, pygame.Rect(x + 15 - pump_offset, y + 28, 45, 18), border_radius=3)
+        pump_offset = int(self._shotgun_pump_offset)
+        pygame.draw.rect(surface, pump_col, pygame.Rect(x + 15 - pump_offset - recoil_offset, y + 28, 50, 20), border_radius=3)
         # Pump grip texture
-        for i in range(6):
+        for i in range(7):
             py = y + 31 + i * 2
-            pygame.draw.line(surface, (90, 55, 30), (x + 18 - pump_offset, py), (x + 57 - pump_offset, py), 1)
+            pygame.draw.line(surface, (90, 55, 30), (x + 18 - pump_offset - recoil_offset, py), (x + 62 - pump_offset - recoil_offset, py), 1)
 
         # Stock (wooden)
         stock_col = (100, 65, 35)
         pygame.draw.polygon(surface, stock_col, [
-            (x - 5, y + 5),
-            (x - 60, y - 10),
-            (x - 80, y + 20),
-            (x - 75, y + 50),
-            (x - 30, y + 55),
-            (x, y + 30),
+            (x - 5 - recoil_offset, y + 5),
+            (x - 60 - recoil_offset, y - 10),
+            (x - 80 - recoil_offset, y + 20),
+            (x - 75 - recoil_offset, y + 50),
+            (x - 30 - recoil_offset, y + 55),
+            (x - recoil_offset, y + 30),
         ])
         # Stock texture
-        pygame.draw.line(surface, (80, 50, 25), (x - 10, y + 10), (x - 70, y + 25), 2)
-        pygame.draw.line(surface, (80, 50, 25), (x - 15, y + 20), (x - 72, y + 35), 2)
+        pygame.draw.line(surface, (80, 50, 25), (x - 10 - recoil_offset, y + 10), (x - 70 - recoil_offset, y + 25), 2)
+        pygame.draw.line(surface, (80, 50, 25), (x - 15 - recoil_offset, y + 20), (x - 72 - recoil_offset, y + 35), 2)
 
         # Trigger guard
-        pygame.draw.arc(surface, receiver_col, pygame.Rect(x - 5, y + 25, 25, 15), 0, math.pi, 3)
+        pygame.draw.arc(surface, receiver_col, pygame.Rect(x - 5 - recoil_offset, y + 25, 25, 15), 0, math.pi, 3)
 
         # Shell indicator (show loaded shells visually)
         for i in range(weapon.ammo):
-            sx = x - 55 + i * 12
-            sy = y + 60
-            # Draw small shell
-            pygame.draw.rect(surface, (180, 140, 60), pygame.Rect(sx, sy, 8, 15), border_radius=1)
-            pygame.draw.rect(surface, (200, 50, 30), pygame.Rect(sx, sy, 8, 8), border_radius=1)
+            sx = x - 55 + i * 14
+            sy = y + 62
+            # Draw shell
+            pygame.draw.rect(surface, (180, 140, 60), pygame.Rect(sx, sy, 10, 18), border_radius=2)
+            pygame.draw.rect(surface, (200, 50, 30), pygame.Rect(sx, sy, 10, 10), border_radius=2)
+
+        # Draw ejected shells
+        self._draw_ejected_shells(surface)
 
     def _draw_rifle_model(self, surface: pygame.Surface, x: int, y: int, weapon):
-        """Draw an M16-style assault rifle model."""
+        """Draw an M16-style assault rifle model with firing animation."""
         metal = (55, 55, 60)
         dark = (40, 40, 45)
         olive = (85, 90, 70)
         stock_col = (75, 65, 55)
 
+        fire_progress = max(0, self._weapon_fire_timer / self._weapon_fire_duration)
+        recoil_offset = int(8 * fire_progress)
+
         # Barrel + muzzle
-        pygame.draw.rect(surface, metal, pygame.Rect(x + 80, y - 2, 110, 8), border_radius=2)
-        pygame.draw.rect(surface, dark, pygame.Rect(x + 185, y - 4, 12, 12), border_radius=2)
-        pygame.draw.line(surface, (90, 90, 95), (x + 190, y - 3), (x + 190, y + 7), 2)
+        pygame.draw.rect(surface, metal, pygame.Rect(x + 80 - recoil_offset, y - 2, 110, 8), border_radius=2)
+        pygame.draw.rect(surface, dark, pygame.Rect(x + 185 - recoil_offset, y - 4, 12, 12), border_radius=2)
+        pygame.draw.line(surface, (90, 90, 95), (x + 190 - recoil_offset, y - 3), (x + 190 - recoil_offset, y + 7), 2)
+
+        # Muzzle flash
+        if fire_progress > 0.3:
+            flash_x = x + 197 - recoil_offset
+            flash_y = y
+            flash_r = int(18 * fire_progress)
+            flash_surf = pygame.Surface((flash_r * 4, flash_r * 4), pygame.SRCALPHA)
+            pygame.draw.circle(flash_surf, (255, 240, 150, 150), (flash_r * 2, flash_r * 2), flash_r)
+            pygame.draw.circle(flash_surf, (255, 255, 200, 200), (flash_r * 2, flash_r * 2), flash_r // 2)
+            surface.blit(flash_surf, (flash_x - flash_r * 2, flash_y - flash_r * 2))
 
         # Front sight
-        pygame.draw.rect(surface, dark, pygame.Rect(x + 155, y - 6, 6, 16), border_radius=1)
+        pygame.draw.rect(surface, dark, pygame.Rect(x + 155 - recoil_offset, y - 6, 6, 16), border_radius=1)
 
         # Carry handle / upper receiver
-        pygame.draw.rect(surface, metal, pygame.Rect(x + 20, y - 8, 70, 20), border_radius=3)
-        pygame.draw.rect(surface, dark, pygame.Rect(x + 35, y - 14, 40, 6), border_radius=2)
+        pygame.draw.rect(surface, metal, pygame.Rect(x + 20 - recoil_offset, y - 8, 70, 20), border_radius=3)
+        pygame.draw.rect(surface, dark, pygame.Rect(x + 35 - recoil_offset, y - 14, 40, 6), border_radius=2)
 
         # Lower receiver
-        pygame.draw.rect(surface, metal, pygame.Rect(x + 10, y + 6, 70, 18), border_radius=3)
-        pygame.draw.circle(surface, dark, (x + 40, y + 15), 3)
+        pygame.draw.rect(surface, metal, pygame.Rect(x + 10 - recoil_offset, y + 6, 70, 18), border_radius=3)
+        pygame.draw.circle(surface, dark, (x + 40 - recoil_offset, y + 15), 3)
+
+        # Ejection port cover
+        if fire_progress > 0.2:
+            # Show open ejection port
+            pygame.draw.rect(surface, (25, 25, 30), pygame.Rect(x + 45 - recoil_offset, y - 6, 15, 10))
 
         # Magazine (curved, size reflects ammo)
         mag_height = max(26, 36 + weapon.ammo)
         mag_points = [
-            (x + 40, y + 22),
-            (x + 60, y + 22),
-            (x + 55, y + 22 + mag_height),
-            (x + 35, y + 22 + mag_height),
+            (x + 40 - recoil_offset, y + 22),
+            (x + 60 - recoil_offset, y + 22),
+            (x + 55 - recoil_offset, y + 22 + mag_height),
+            (x + 35 - recoil_offset, y + 22 + mag_height),
         ]
         pygame.draw.polygon(surface, (60, 60, 65), mag_points)
-        pygame.draw.line(surface, (90, 90, 95), (x + 38, y + 30), (x + 52, y + mag_height), 2)
+        pygame.draw.line(surface, (90, 90, 95), (x + 38 - recoil_offset, y + 30), (x + 52 - recoil_offset, y + mag_height), 2)
 
         # Handguard
-        pygame.draw.rect(surface, olive, pygame.Rect(x + 85, y + 6, 45, 12), border_radius=2)
+        pygame.draw.rect(surface, olive, pygame.Rect(x + 85 - recoil_offset, y + 6, 45, 12), border_radius=2)
         for i in range(4):
-            pygame.draw.line(surface, (70, 75, 60), (x + 90 + i * 10, y + 8), (x + 90 + i * 10, y + 16), 1)
+            pygame.draw.line(surface, (70, 75, 60), (x + 90 - recoil_offset + i * 10, y + 8), (x + 90 - recoil_offset + i * 10, y + 16), 1)
 
         # Stock
         pygame.draw.polygon(surface, stock_col, [
-            (x + 10, y + 6),
-            (x - 30, y - 4),
-            (x - 55, y + 8),
-            (x - 50, y + 34),
-            (x - 10, y + 28),
-            (x + 10, y + 20),
+            (x + 10 - recoil_offset, y + 6),
+            (x - 30 - recoil_offset, y - 4),
+            (x - 55 - recoil_offset, y + 8),
+            (x - 50 - recoil_offset, y + 34),
+            (x - 10 - recoil_offset, y + 28),
+            (x + 10 - recoil_offset, y + 20),
         ])
-        pygame.draw.rect(surface, dark, pygame.Rect(x - 52, y + 10, 10, 20), border_radius=2)
+        pygame.draw.rect(surface, dark, pygame.Rect(x - 52 - recoil_offset, y + 10, 10, 20), border_radius=2)
 
         # Grip
         pygame.draw.polygon(surface, stock_col, [
-            (x + 28, y + 22),
-            (x + 18, y + 52),
-            (x + 35, y + 55),
-            (x + 42, y + 26),
+            (x + 28 - recoil_offset, y + 22),
+            (x + 18 - recoil_offset, y + 52),
+            (x + 35 - recoil_offset, y + 55),
+            (x + 42 - recoil_offset, y + 26),
         ])
 
         # Trigger guard
-        pygame.draw.arc(surface, dark, pygame.Rect(x + 20, y + 20, 22, 14), 0, math.pi, 3)
+        pygame.draw.arc(surface, dark, pygame.Rect(x + 20 - recoil_offset, y + 20, 22, 14), 0, math.pi, 3)
+
+        # Draw ejected shells
+        self._draw_ejected_shells(surface)
+
+    def _draw_ejected_shells(self, surface: pygame.Surface):
+        """Draw ejected bullet shells with physics."""
+        for sx, sy, svx, svy, sr in self._ejected_shells:
+            # Draw shell casing
+            shell_len = 8
+            shell_w = 4
+            angle_rad = math.radians(sr)
+            # Shell body
+            dx = int(math.cos(angle_rad) * shell_len)
+            dy = int(math.sin(angle_rad) * shell_len)
+            pygame.draw.line(surface, (180, 140, 60), (int(sx), int(sy)), (int(sx + dx), int(sy + dy)), shell_w)
+            # Shell tip (bullet)
+            pygame.draw.circle(surface, (200, 180, 100), (int(sx + dx), int(sy + dy)), 3)
 
     # ── day HUD ──────────────────────────────────────────────────────────
 
