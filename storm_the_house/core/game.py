@@ -79,9 +79,9 @@ class Game:
             )
             eod.bg_snapshot = gs.last_frame
             # Stash game state on the EOD scene so we can resume
-            eod._carry_day = gs.day          # type: ignore[attr-defined]
-            eod._carry_house = gs.house      # type: ignore[attr-defined]
-            eod._carry_weapon = gs.weapon    # type: ignore[attr-defined]
+            eod._carry_day = gs.day               # type: ignore[attr-defined]
+            eod._carry_house = gs.house           # type: ignore[attr-defined]
+            eod._carry_weapon_manager = gs.weapon_manager  # type: ignore[attr-defined]
             self.set_scene(eod)
 
         elif ns == "next_day":
@@ -90,13 +90,21 @@ class Game:
             day = getattr(eod_scene, "_carry_day", 1) + 1
             money = eod_scene.money  # current money (after purchases)
             house = getattr(eod_scene, "_carry_house", None)
-            weapon = getattr(eod_scene, "_carry_weapon", None)
+            weapon_manager = getattr(eod_scene, "_carry_weapon_manager", None)
             upgrades = eod_scene.upgrades
+
+            # Sync weapon ownership from upgrades to weapon_manager
+            if weapon_manager and upgrades:
+                if upgrades.owns_shotgun and not weapon_manager.owns_weapon("shotgun"):
+                    weapon_manager.purchase_shotgun()
+                if upgrades.owns_assault_rifle and not weapon_manager.owns_weapon("assault_rifle"):
+                    weapon_manager.purchase_assault_rifle()
+
             gs = GameScene(
                 day=day,
                 money=money,
                 house=house,
-                weapon=weapon,
+                weapon_manager=weapon_manager,
                 upgrades=upgrades,
             )
             self.set_scene(gs)

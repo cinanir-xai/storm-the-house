@@ -5,8 +5,8 @@ All tunable parameters live here so they're easy to find and adjust.
 """
 
 # ── Display ──────────────────────────────────────────────────────────────────
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
 FPS = 60
 TITLE = "Storm the House"
 
@@ -95,6 +95,35 @@ MUZZLE_FLASH_DURATION = 0.08        # seconds
 PLAYER_MAX_AMMO = 7
 PLAYER_GUN_DAMAGE = 1
 PLAYER_RELOAD_TIME = 5.0            # seconds
+
+# ── Weapon System ───────────────────────────────────────────────────────────
+# Pistol (weapon 1)
+PISTOL_MAX_AMMO = 7
+PISTOL_DAMAGE = 1
+PISTOL_RELOAD_TIME = 2.5
+PISTOL_NAME = "Pistol"
+
+# Shotgun (weapon 2)
+SHOTGUN_MAX_AMMO = 3
+SHOTGUN_PELLET_COUNT = 8
+SHOTGUN_PELLET_SPREAD = 40          # pixel spread radius
+SHOTGUN_DAMAGE_PER_PELLET = 1
+SHOTGUN_SHELL_RELOAD_TIME = 1.0     # 1 second per shell
+SHOTGUN_NAME = "Shotgun"
+SHOTGUN_COST = 500
+
+# Assault Rifle (weapon 3) - placeholder
+ASSAULT_RIFLE_MAX_AMMO = 30
+ASSAULT_RIFLE_DAMAGE = 1
+ASSAULT_RIFLE_FIRE_RATE = 0.1       # seconds between shots
+ASSAULT_RIFLE_RELOAD_TIME = 2.0
+ASSAULT_RIFLE_NAME = "Assault Rifle"
+ASSAULT_RIFLE_COST = 1000
+
+# Weapon colors
+SHOTGUN_SHELL_COLOR = (200, 50, 30)     # red shell
+SHOTGUN_SHELL_BRASS = (180, 140, 60)    # brass base
+SHOTGUN_SHELL_PRIMER = (120, 100, 50)
 
 # ── Enemy HP ────────────────────────────────────────────────────────────────
 ENEMY_HP = 3
@@ -321,10 +350,11 @@ DEBRIS_COLORS = [
 
 # ── Armored Car (boss enemy) ──────────────────────────────────────────────
 ARMORED_CAR_HP = 10
-ARMORED_CAR_SPEED = 120              # px/s when driving to position
+ARMORED_CAR_SPEED = 84               # 30% slower (120 * 0.7)
 ARMORED_CAR_ATTACK_COOLDOWN = 0.4    # 3x faster than grunt (1.2 / 3)
 ARMORED_CAR_STOP_X_RATIO = 0.45     # Stop at 45% of screen width (middle)
 ARMORED_CAR_MONEY_REWARD = 50       # 5x normal soldier reward
+ARMORED_CAR_DAMAGE = 5              # Half of normal enemy damage (10 / 2)
 
 # Armored car colors (green military technical)
 ARMORED_CAR_BODY = (85, 105, 70)         # olive green

@@ -23,6 +23,7 @@ from storm_the_house.core.settings import (
     HUD_HOUSE_HP_EMPTY,
     HUD_MONEY_MARGIN, HUD_MONEY_COLOR, HUD_MONEY_SHADOW,
     HUD_MONEY_ICON_COLOR,
+    SHOTGUN_SHELL_COLOR, SHOTGUN_SHELL_BRASS, SHOTGUN_SHELL_PRIMER,
 )
 from storm_the_house.utils.drawing import lerp_color
 
@@ -53,24 +54,40 @@ class HUDRenderer:
     def draw(self, surface: pygame.Surface, ammo: int, max_ammo: int,
              reloading: bool, reload_progress: float,
              house_hp: int, house_max_hp: int,
-             money: int, kills: int = 0):
+             money: int, kills: int = 0,
+             weapon_type: str = "pistol", weapon_name: str = "Pistol"):
         """Draw the full HUD overlay."""
-        self._draw_ammo_bullets(surface, ammo, max_ammo)
+        self._draw_ammo_display(surface, ammo, max_ammo, weapon_type, weapon_name)
         if reloading:
-            self._draw_reload_label(surface, reload_progress)
+            self._draw_reload_label(surface, reload_progress, weapon_type)
         self._draw_house_hp(surface, house_hp, house_max_hp)
         self._draw_money(surface, money)
         self._draw_kills(surface, kills)
 
-    # ── ammo bullets (top-left) ─────────────────────────────────────────
+    # ── ammo display (top-left) ─────────────────────────────────────────
+
+    def _draw_ammo_display(self, surface: pygame.Surface, ammo: int,
+                           max_ammo: int, weapon_type: str, weapon_name: str):
+        """Draw ammo display appropriate to weapon type."""
+        if weapon_type == "shotgun":
+            self._draw_shotgun_shells(surface, ammo, max_ammo, weapon_name)
+        else:
+            self._draw_ammo_bullets(surface, ammo, max_ammo, weapon_name)
 
     def _draw_ammo_bullets(self, surface: pygame.Surface, ammo: int,
-                           max_ammo: int):
+                           max_ammo: int, weapon_name: str = "Pistol"):
         """Draw bullet icons – filled for available, dark for spent."""
         x = HUD_AMMO_X
         y = HUD_AMMO_Y
         bw = HUD_BULLET_W
         bh = HUD_BULLET_H
+
+        # Weapon name label
+        font = self._get_font_sm()
+        name_text = font.render(weapon_name.upper(), True, HUD_LABEL_COLOR)
+        name_shadow = font.render(weapon_name.upper(), True, (0, 0, 0))
+        surface.blit(name_shadow, (x + 1, y - 16))
+        surface.blit(name_text, (x, y - 17))
 
         # Background panel
         panel_w = max_ammo * (bw + HUD_BULLET_GAP) + HUD_BULLET_GAP + 8
@@ -108,19 +125,101 @@ class HUDRenderer:
                                  pygame.Rect(bx + 1, by + 1, bw - 2, bh - 2),
                                  border_radius=1)
 
+    def _draw_shotgun_shells(self, surface: pygame.Surface, ammo: int,
+                             max_ammo: int, weapon_name: str = "Shotgun"):
+        """Draw shotgun shell icons – larger, red shells."""
+        x = HUD_AMMO_X
+        y = HUD_AMMO_Y
+
+        # Shell dimensions (larger than pistol bullets)
+        shell_w = 10
+        shell_h = 24
+        shell_gap = 6
+
+        # Weapon name label
+        font = self._get_font_sm()
+        name_text = font.render(weapon_name.upper(), True, HUD_LABEL_COLOR)
+        name_shadow = font.render(weapon_name.upper(), True, (0, 0, 0))
+        surface.blit(name_shadow, (x + 1, y - 16))
+        surface.blit(name_text, (x, y - 17))
+
+        # Background panel
+        panel_w = max_ammo * (shell_w + shell_gap) + shell_gap + 8
+        panel_h = shell_h + 16
+        panel_rect = pygame.Rect(x - 6, y - 6, panel_w, panel_h)
+        panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (0, 0, 0, 100), panel.get_rect(),
+                         border_radius=4)
+        surface.blit(panel, panel_rect.topleft)
+
+        for i in range(max_ammo):
+            sx = x + i * (shell_w + shell_gap)
+            sy = y
+
+            if i < ammo:
+                # ── live shell ──────────────────────────────────────────
+                # Brass base (bottom third)
+                brass_h = int(shell_h * 0.35)
+                pygame.draw.rect(surface, SHOTGUN_SHELL_BRASS,
+                                 pygame.Rect(sx, sy + shell_h - brass_h, shell_w, brass_h))
+                # Primer circle
+                primer_y = sy + shell_h - brass_h // 2
+                pygame.draw.circle(surface, SHOTGUN_SHELL_PRIMER,
+                                   (sx + shell_w // 2, primer_y), 3)
+
+                # Red shell body (top two-thirds)
+                shell_body_h = shell_h - brass_h
+                pygame.draw.rect(surface, SHOTGUN_SHELL_COLOR,
+                                 pygame.Rect(sx, sy, shell_w, shell_body_h + 2))
+
+                # Shell crimp (wavy top)
+                crimp_h = 3
+                for c in range(0, shell_w, 2):
+                    crimp_offset = 2 if (c // 2) % 2 == 0 else 0
+                    pygame.draw.line(surface, (220, 60, 40),
+                                     (sx + c, sy),
+                                     (sx + c, sy + crimp_h - crimp_offset), 1)
+
+                # Highlight on shell body
+                pygame.draw.line(surface, (230, 80, 60),
+                                 (sx + 2, sy + 3),
+                                 (sx + 2, sy + shell_body_h - 2), 2)
+
+                # Metallic rim
+                pygame.draw.rect(surface, (200, 170, 80),
+                                 pygame.Rect(sx, sy + shell_body_h - 1, shell_w, 2))
+            else:
+                # ── empty slot ───────────────────────────────────────
+                pygame.draw.rect(surface, HUD_BULLET_EMPTY,
+                                 pygame.Rect(sx, sy, shell_w, shell_h),
+                                 border_radius=2)
+                pygame.draw.rect(surface, (50, 48, 45),
+                                 pygame.Rect(sx + 1, sy + 1, shell_w - 2, shell_h - 2),
+                                 border_radius=2)
+
     # ── reload label ────────────────────────────────────────────────────
 
     def _draw_reload_label(self, surface: pygame.Surface,
-                           reload_progress: float):
+                           reload_progress: float, weapon_type: str = "pistol"):
         """Show 'RELOADING' text below the ammo display."""
         font = self._get_font()
         pct = int(reload_progress * 100)
-        text = font.render(f"RELOADING {pct}%", True, HUD_LABEL_COLOR)
+
+        if weapon_type == "shotgun":
+            text = font.render(f"LOADING SHELL {pct}%", True, HUD_LABEL_COLOR)
+        else:
+            text = font.render(f"RELOADING {pct}%", True, HUD_LABEL_COLOR)
 
         tx = HUD_AMMO_X - 2
-        ty = HUD_AMMO_Y + HUD_BULLET_H + 16
+        ty = HUD_AMMO_Y + HUD_BULLET_H + 20
 
-        shadow = font.render(f"RELOADING {pct}%", True, (0, 0, 0))
+        shadow = font.render(text.get_at((0, 0)) and text.get_size()[0] and "RELOADING" or text.get_at((0, 0)) and text.get_size()[0] and "LOADING SHELL" or f"RELOADING {pct}%", True, (0, 0, 0))
+        # Re-render shadow properly
+        if weapon_type == "shotgun":
+            shadow = font.render(f"LOADING SHELL {pct}%", True, (0, 0, 0))
+        else:
+            shadow = font.render(f"RELOADING {pct}%", True, (0, 0, 0))
+
         surface.blit(shadow, (tx + 1, ty + 1))
         surface.blit(text, (tx, ty))
 

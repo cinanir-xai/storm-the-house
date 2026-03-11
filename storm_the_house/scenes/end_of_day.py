@@ -2,8 +2,8 @@
 End-of-day summary scene with upgrade shop.
 
 Shows the day number, enemies killed, house health, and money earned,
-seven upgrade cards arranged in three rows (3 weapon, 2 house, 2 hired
-help), and a "Continue to Next Day" button.
+upgrade cards for the selected weapon, weapon selection panel on the right,
+house upgrades, and hired help.
 
 The system cursor is visible on this screen.
 """
@@ -26,6 +26,8 @@ from storm_the_house.core.settings import (
     UPGRADE_CARD_PRICE, UPGRADE_CARD_PRICE_LOCKED,
     UPGRADE_CARD_LEVEL, UPGRADE_CARD_ICON,
     PLAYER_GUN_DAMAGE, PLAYER_MAX_AMMO,
+    PISTOL_DAMAGE, PISTOL_MAX_AMMO, PISTOL_RELOAD_TIME,
+    SHOTGUN_COST, ASSAULT_RIFLE_COST,
     REPAIRMAN_HEAL_PER_MAN, REPAIRMAN_HEAL_INTERVAL,
     GUNMAN_BASE_INTERVAL,
 )
@@ -153,62 +155,67 @@ class EndOfDayScene:
         ch = UPGRADE_CARD_H
         gap = UPGRADE_CARD_GAP
 
-        # Row 1: 3 weapon upgrades (centered)
+        # Row 1: 3 weapon upgrades (centered, shifted left for weapon panel)
         row1_total = 3 * cw + 2 * gap
-        row1_x = (SCREEN_WIDTH - row1_total) // 2
+        row1_x = (SCREEN_WIDTH - row1_total) // 2 - 100  # Shift left for weapon panel
         row1_y = 248
 
-        # Row 2: 2 house upgrades (centered)
+        # Row 2: 2 house upgrades (centered, shifted left)
         row2_total = 2 * cw + 1 * gap
-        row2_x = (SCREEN_WIDTH - row2_total) // 2
+        row2_x = (SCREEN_WIDTH - row2_total) // 2 - 100
         row2_y = row1_y + ch + gap
 
-        # Row 3: 2 hired help upgrades (centered)
+        # Row 3: 2 hired help upgrades (centered, shifted left)
         row3_total = 2 * cw + 1 * gap
-        row3_x = (SCREEN_WIDTH - row3_total) // 2
+        row3_x = (SCREEN_WIDTH - row3_total) // 2 - 100
         row3_y = row2_y + ch + gap
 
         u = self.upgrades
         house = self.house
         cards: list[_UpgradeCard] = []
 
-        # ── Row 1: Weapon upgrades ────────────────────────────────────
+        # Get selected weapon upgrades
+        weapon_upgrades = u.get_weapon_upgrades(u.selected_weapon)
+
+        # ── Row 1: Weapon upgrades (for selected weapon) ────────────────────────────────────
 
         # 1) Damage
         cards.append(_UpgradeCard(
             key="damage",
             title="Damage +1",
-            desc_fn=lambda: f"Current: {PLAYER_GUN_DAMAGE + u.bonus_damage} dmg",
-            price_fn=lambda: u.damage_price,
-            level_fn=lambda: u.damage_level,
-            can_buy_fn=lambda m: u.can_buy_damage(m),
-            buy_fn=lambda m: u.buy_damage(m),
+            desc_fn=lambda: f"Current: {weapon_upgrades.bonus_damage + 1} dmg",
+            price_fn=lambda: weapon_upgrades.damage_price,
+            level_fn=lambda: weapon_upgrades.damage_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_damage(m) and u.selected_weapon != "shotgun",
+            buy_fn=lambda m: weapon_upgrades.buy_damage(m),
             icon_fn=self._draw_damage_icon,
             rect=pygame.Rect(row1_x, row1_y, cw, ch),
         ))
 
         # 2) Ammo
+        base_ammo = PISTOL_MAX_AMMO if u.selected_weapon == "pistol" else 3
         cards.append(_UpgradeCard(
             key="ammo",
             title="Ammo +1",
-            desc_fn=lambda: f"Current: {PLAYER_MAX_AMMO + u.bonus_ammo} rounds",
-            price_fn=lambda: u.ammo_price,
-            level_fn=lambda: u.ammo_level,
-            can_buy_fn=lambda m: u.can_buy_ammo(m),
-            buy_fn=lambda m: u.buy_ammo(m),
+            desc_fn=lambda: f"Current: {base_ammo + weapon_upgrades.bonus_ammo} rounds",
+            price_fn=lambda: weapon_upgrades.ammo_price,
+            level_fn=lambda: weapon_upgrades.ammo_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_ammo(m) and u.selected_weapon != "shotgun",
+            buy_fn=lambda m: weapon_upgrades.buy_ammo(m),
             icon_fn=self._draw_ammo_icon,
             rect=pygame.Rect(row1_x + cw + gap, row1_y, cw, ch),
         ))
 
         # 3) Reload speed
+        base_reload = PISTOL_RELOAD_TIME if u.selected_weapon == "pistol" else 1.0
         cards.append(_UpgradeCard(
             key="reload",
             title="Fast Reload",
-            desc_fn=lambda: f"Current: {u.reload_time:.1f}s reload",
-            price_fn=lambda: u.reload_price,
-            level_fn=lambda: u.reload_level,
-            can_buy_fn=lambda m: u.can_buy_reload(m),
-            buy_fn=lambda m: u.buy_reload(m),
+            desc_fn=lambda: f"Current: {weapon_upgrades.reload_time(base_reload):.1f}s reload",
+            price_fn=lambda: weapon_upgrades.reload_price,
+            level_fn=lambda: weapon_upgrades.reload_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_reload(m) and u.selected_weapon != "shotgun",
+            buy_fn=lambda m: weapon_upgrades.buy_reload(m),
             icon_fn=self._draw_reload_icon,
             rect=pygame.Rect(row1_x + 2 * (cw + gap), row1_y, cw, ch),
         ))
@@ -446,12 +453,61 @@ class EndOfDayScene:
                         self._continue = True
                         continue
 
+                    # Check weapon panel clicks
+                    weapon_clicked = self._check_weapon_panel_click(mx, my)
+                    if weapon_clicked:
+                        continue
+
                     # Check upgrade cards
                     for card in self._cards:
                         if card.hovered and card.can_buy_fn(self.money):
                             self.money = card.buy_fn(self.money)
                             self._flash_card = card.key
                             self._flash_timer = 0.35
+
+    def _check_weapon_panel_click(self, mx: int, my: int) -> bool:
+        """Check if a weapon panel button was clicked. Returns True if handled."""
+        u = self.upgrades
+
+        # Weapon panel position (right side of screen)
+        panel_x = SCREEN_WIDTH - 200
+        panel_y = 248
+        panel_w = 180
+        btn_h = 60
+        gap = 8
+
+        # Check each weapon button
+        weapons = [
+            ("pistol", "Pistol", True),  # Always owned
+            ("shotgun", "Shotgun", u.owns_shotgun),
+            ("assault_rifle", "Assault Rifle", u.owns_assault_rifle),
+        ]
+
+        for i, (weapon_type, name, owned) in enumerate(weapons):
+            btn_y = panel_y + i * (btn_h + gap)
+            btn_rect = pygame.Rect(panel_x, btn_y, panel_w, btn_h)
+
+            if btn_rect.collidepoint(mx, my):
+                if owned:
+                    # Select this weapon
+                    u.selected_weapon = weapon_type
+                    # Rebuild cards for new weapon
+                    self._cards = self._build_cards()
+                    return True
+                else:
+                    # Try to purchase
+                    if weapon_type == "shotgun" and u.can_buy_shotgun(self.money):
+                        self.money = u.buy_shotgun(self.money)
+                        self._flash_card = "buy_shotgun"
+                        self._flash_timer = 0.35
+                        return True
+                    elif weapon_type == "assault_rifle" and u.can_buy_assault_rifle(self.money):
+                        self.money = u.buy_assault_rifle(self.money)
+                        self._flash_card = "buy_assault_rifle"
+                        self._flash_timer = 0.35
+                        return True
+
+        return False
 
     # ── draw ──────────────────────────────────────────────────────────
 
@@ -469,7 +525,7 @@ class EndOfDayScene:
 
         # ── stats panel (top portion) ────────────────────────────────
         pw, ph = 620, 195
-        px = (SCREEN_WIDTH - pw) // 2
+        px = (SCREEN_WIDTH - pw) // 2 - 100  # Shift left for weapon panel
         py = 10
         panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
         pygame.draw.rect(panel, EOD_PANEL_COLOR, panel.get_rect(),
@@ -482,7 +538,7 @@ class EndOfDayScene:
         ft = self._ft()
         title = ft.render(f"Day {self.day} Complete", True, EOD_TITLE_COLOR)
         title_shadow = ft.render(f"Day {self.day} Complete", True, (0, 0, 0))
-        tx = (SCREEN_WIDTH - title.get_width()) // 2
+        tx = (SCREEN_WIDTH - title.get_width()) // 2 - 100
         ty = py + 12
         surface.blit(title_shadow, (tx + 2, ty + 2))
         surface.blit(title, (tx, ty))
@@ -526,7 +582,7 @@ class EndOfDayScene:
         # ── "Upgrades" section header ────────────────────────────────
         upgrades_label = ft.render("Upgrades", True, (200, 190, 165))
         upgrades_shadow = ft.render("Upgrades", True, (0, 0, 0))
-        ulx = (SCREEN_WIDTH - upgrades_label.get_width()) // 2
+        ulx = self._cards[0].rect.x + (3 * UPGRADE_CARD_W + 2 * UPGRADE_CARD_GAP) // 2 - upgrades_label.get_width() // 2
         uly = self._cards[0].rect.y - 34
         surface.blit(upgrades_shadow, (ulx + 1, uly + 1))
         surface.blit(upgrades_label, (ulx, uly))
@@ -534,6 +590,9 @@ class EndOfDayScene:
         # ── upgrade cards ────────────────────────────────────────────
         for card in self._cards:
             self._draw_card(surface, card, time_ms)
+
+        # ── weapon panel (right side) ────────────────────────────────────
+        self._draw_weapon_panel(surface, time_ms)
 
         # ── continue button ──────────────────────────────────────────
         btn_color = EOD_BTN_HOVER if self._btn_hovered else EOD_BTN_COLOR
@@ -551,6 +610,148 @@ class EndOfDayScene:
         surface.blit(btn_txt,
                      (self._btn_rect.centerx - btn_txt.get_width() // 2,
                       self._btn_rect.centery - btn_txt.get_height() // 2))
+
+    def _draw_weapon_panel(self, surface: pygame.Surface, time_ms: int):
+        """Draw the weapon selection panel on the right side."""
+        u = self.upgrades
+
+        # Panel position
+        panel_x = SCREEN_WIDTH - 200
+        panel_y = 248
+        panel_w = 180
+        btn_h = 60
+        gap = 8
+
+        # Panel header
+        ft = self._ft()
+        header = ft.render("Weapons", True, (200, 190, 165))
+        header_shadow = ft.render("Weapons", True, (0, 0, 0))
+        surface.blit(header_shadow, (panel_x + panel_w // 2 - header.get_width() // 2 + 1, panel_y - 34 + 1))
+        surface.blit(header, (panel_x + panel_w // 2 - header.get_width() // 2, panel_y - 34))
+
+        # Weapon buttons
+        weapons = [
+            ("pistol", "Pistol", True, 0),
+            ("shotgun", "Shotgun", u.owns_shotgun, SHOTGUN_COST),
+            ("assault_rifle", "Assault Rifle", u.owns_assault_rifle, ASSAULT_RIFLE_COST),
+        ]
+
+        fct = self._fct()
+        fcd = self._fcd()
+        fcp = self._fcp()
+
+        mx, my = pygame.mouse.get_pos()
+
+        for i, (weapon_type, name, owned, cost) in enumerate(weapons):
+            btn_y = panel_y + i * (btn_h + gap)
+            btn_rect = pygame.Rect(panel_x, btn_y, panel_w, btn_h)
+            is_selected = u.selected_weapon == weapon_type
+            is_hovered = btn_rect.collidepoint(mx, my)
+
+            # Background color
+            if is_selected:
+                bg_color = (50, 70, 45, 230)
+            elif owned and is_hovered:
+                bg_color = (55, 50, 40, 230)
+            elif owned:
+                bg_color = (40, 38, 32, 220)
+            elif not owned and is_hovered and self.money >= cost:
+                bg_color = (60, 55, 35, 230)
+            else:
+                bg_color = (30, 28, 25, 180)
+
+            # Draw button
+            btn_surf = pygame.Surface((panel_w, btn_h), pygame.SRCALPHA)
+            pygame.draw.rect(btn_surf, bg_color, btn_surf.get_rect(), border_radius=8)
+
+            # Border
+            if is_selected:
+                border_col = (100, 180, 80)
+            elif owned and is_hovered:
+                border_col = lerp_color(UPGRADE_CARD_BORDER, (255, 255, 255), 0.2)
+            elif not owned and self.money >= cost:
+                border_col = (150, 130, 80)
+            else:
+                border_col = (60, 55, 50)
+
+            pygame.draw.rect(btn_surf, border_col, btn_surf.get_rect(), width=2, border_radius=8)
+            surface.blit(btn_surf, btn_rect.topleft)
+
+            # Weapon number
+            num_font = self._fs()
+            num_text = num_font.render(f"{i + 1}", True, (150, 145, 135))
+            surface.blit(num_text, (btn_rect.x + 8, btn_rect.y + 6))
+
+            # Weapon name
+            name_color = (230, 220, 190) if owned else (130, 120, 110)
+            name_surf = fct.render(name, True, name_color)
+            surface.blit(name_surf, (btn_rect.centerx - name_surf.get_width() // 2, btn_rect.y + 8))
+
+            # Status
+            if owned:
+                status_text = "OWNED" if is_selected else "Select"
+                status_color = (100, 180, 80) if is_selected else (150, 145, 130)
+            else:
+                if self.money >= cost:
+                    status_text = f"${cost} - Buy"
+                    status_color = (180, 160, 80)
+                else:
+                    status_text = f"${cost}"
+                    status_color = (140, 80, 60)
+
+            status_surf = fcd.render(status_text, True, status_color)
+            surface.blit(status_surf, (btn_rect.centerx - status_surf.get_width() // 2, btn_rect.y + 32))
+
+            # Draw weapon icon
+            icon_x = btn_rect.x + 25
+            icon_y = btn_rect.centery
+            if weapon_type == "pistol":
+                self._draw_pistol_icon(surface, icon_x, icon_y)
+            elif weapon_type == "shotgun":
+                self._draw_shotgun_icon(surface, icon_x, icon_y)
+            elif weapon_type == "assault_rifle":
+                self._draw_rifle_icon(surface, icon_x, icon_y)
+
+    @staticmethod
+    def _draw_pistol_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw a small pistol icon."""
+        col = UPGRADE_CARD_ICON
+        # Slide
+        pygame.draw.rect(surface, col, pygame.Rect(cx - 2, cy - 8, 4, 10), border_radius=1)
+        # Barrel
+        pygame.draw.rect(surface, col, pygame.Rect(cx - 2, cy - 12, 4, 6), border_radius=1)
+        # Grip
+        pygame.draw.rect(surface, (110, 70, 40), pygame.Rect(cx - 3, cy + 2, 6, 8), border_radius=1)
+        # Trigger guard
+        pygame.draw.arc(surface, col, pygame.Rect(cx - 4, cy, 8, 6), 0, math.pi, 1)
+
+    @staticmethod
+    def _draw_shotgun_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw a small shotgun icon (M870 style)."""
+        col = UPGRADE_CARD_ICON
+        # Barrel (long)
+        pygame.draw.rect(surface, col, pygame.Rect(cx - 2, cy - 16, 4, 18), border_radius=1)
+        # Receiver
+        pygame.draw.rect(surface, (70, 70, 75), pygame.Rect(cx - 3, cy - 4, 6, 10), border_radius=1)
+        # Pump
+        pygame.draw.rect(surface, (110, 70, 40), pygame.Rect(cx - 4, cy - 8, 8, 5), border_radius=1)
+        # Stock
+        pygame.draw.rect(surface, (110, 70, 40), pygame.Rect(cx - 3, cy + 4, 6, 8), border_radius=1)
+
+    @staticmethod
+    def _draw_rifle_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw a small assault rifle icon."""
+        col = UPGRADE_CARD_ICON
+        # Barrel
+        pygame.draw.rect(surface, col, pygame.Rect(cx - 2, cy - 14, 4, 14), border_radius=1)
+        # Receiver
+        pygame.draw.rect(surface, (60, 60, 65), pygame.Rect(cx - 4, cy - 4, 8, 10), border_radius=1)
+        # Magazine
+        pygame.draw.rect(surface, col, pygame.Rect(cx + 3, cy + 2, 4, 8), border_radius=1)
+        # Stock
+        pygame.draw.rect(surface, (100, 65, 35), pygame.Rect(cx - 4, cy + 4, 8, 6), border_radius=1)
+        # Grip
+        pygame.draw.rect(surface, (100, 65, 35), pygame.Rect(cx - 3, cy + 6, 4, 6), border_radius=1)
 
     # ── single card renderer ─────────────────────────────────────────
 

@@ -1,10 +1,14 @@
 """
 Upgrade state – tracks the level and escalating price of each upgrade.
 
-Weapon upgrades (infinitely stackable):
+Weapon upgrades (infinitely stackable per weapon):
   - **Damage**  : +1 damage per level
   - **Ammo**    : +1 max ammo per level
   - **Reload**  : 15 % faster reload per level (multiplicative)
+
+Weapon purchases:
+  - **Shotgun** : $500 to unlock
+  - **Assault Rifle** : $1000 to unlock (placeholder)
 
 House upgrades:
   - **Repair House** : fully heals the house; cost increases 50 % each buy.
@@ -21,38 +25,26 @@ from __future__ import annotations
 from storm_the_house.core.settings import (
     UPGRADE_BASE_COST, UPGRADE_PRICE_MULTIPLIER,
     UPGRADE_DAMAGE_AMOUNT, UPGRADE_AMMO_AMOUNT, UPGRADE_RELOAD_FACTOR,
-    PLAYER_RELOAD_TIME,
+    PLAYER_RELOAD_TIME, PISTOL_RELOAD_TIME,
     REPAIR_BASE_COST, REPAIR_PRICE_MULTIPLIER,
     FORTIFY_MAX_LEVEL, FORTIFY_COSTS, FORTIFY_HP_LEVELS,
     HOUSE_MAX_HP,
     REPAIRMAN_COST, GUNMAN_COST,
     GUNMAN_BASE_INTERVAL, GUNMAN_SPEED_FACTOR,
+    SHOTGUN_COST, ASSAULT_RIFLE_COST,
 )
 
 
-class UpgradeState:
-    """Persistent upgrade tracker that lives across days."""
+class WeaponUpgradeState:
+    """Upgrade state for a single weapon."""
 
     def __init__(self):
-        # Weapon upgrade levels (0 = not purchased yet)
         self.damage_level: int = 0
         self.ammo_level: int = 0
         self.reload_level: int = 0
 
-        # House upgrades
-        self.repair_count: int = 0       # how many times Repair has been bought
-        self.fortify_level: int = 0      # 0, 1, or 2
-
-        # Hired help
-        self.repairman_count: int = 0
-        self.gunman_count: int = 0
-
-    # ── price helpers ────────────────────────────────────────────────────
-
     @staticmethod
     def _price_for_level(level: int) -> int:
-        """Return the cost to buy the *next* level (i.e. going from
-        *level* → *level + 1*)."""
         return int(UPGRADE_BASE_COST * (UPGRADE_PRICE_MULTIPLIER ** level))
 
     @property
@@ -68,6 +60,127 @@ class UpgradeState:
         return self._price_for_level(self.reload_level)
 
     @property
+    def bonus_damage(self) -> int:
+        return self.damage_level * UPGRADE_DAMAGE_AMOUNT
+
+    @property
+    def bonus_ammo(self) -> int:
+        return self.ammo_level * UPGRADE_AMMO_AMOUNT
+
+    def reload_time(self, base_time: float) -> float:
+        return base_time * (UPGRADE_RELOAD_FACTOR ** self.reload_level)
+
+    def can_buy_damage(self, money: int) -> bool:
+        return money >= self.damage_price
+
+    def can_buy_ammo(self, money: int) -> bool:
+        return money >= self.ammo_price
+
+    def can_buy_reload(self, money: int) -> bool:
+        return money >= self.reload_price
+
+    def buy_damage(self, money: int) -> int:
+        cost = self.damage_price
+        if money < cost:
+            return money
+        self.damage_level += 1
+        return money - cost
+
+    def buy_ammo(self, money: int) -> int:
+        cost = self.ammo_price
+        if money < cost:
+            return money
+        self.ammo_level += 1
+        return money - cost
+
+    def buy_reload(self, money: int) -> int:
+        cost = self.reload_price
+        if money < cost:
+            return money
+        self.reload_level += 1
+        return money - cost
+
+
+class UpgradeState:
+    """Persistent upgrade tracker that lives across days."""
+
+    def __init__(self):
+        # Weapon ownership
+        self.owns_shotgun: bool = False
+        self.owns_assault_rifle: bool = False
+
+        # Per-weapon upgrade states
+        self.pistol_upgrades = WeaponUpgradeState()
+        self.shotgun_upgrades = WeaponUpgradeState()
+        self.assault_rifle_upgrades = WeaponUpgradeState()
+
+        # Currently selected weapon for upgrades display
+        self.selected_weapon: str = "pistol"
+
+        # House upgrades
+        self.repair_count: int = 0       # how many times Repair has been bought
+        self.fortify_level: int = 0      # 0, 1, or 2
+
+        # Hired help
+        self.repairman_count: int = 0
+        self.gunman_count: int = 0
+
+    def get_weapon_upgrades(self, weapon_type: str) -> WeaponUpgradeState:
+        if weapon_type == "shotgun":
+            return self.shotgun_upgrades
+        elif weapon_type == "assault_rifle":
+            return self.assault_rifle_upgrades
+        return self.pistol_upgrades
+
+    # ── weapon prices ────────────────────────────────────────────────────
+
+    @property
+    def shotgun_price(self) -> int:
+        return SHOTGUN_COST
+
+    @property
+    def assault_rifle_price(self) -> int:
+        return ASSAULT_RIFLE_COST
+
+    def can_buy_shotgun(self, money: int) -> bool:
+        return not self.owns_shotgun and money >= SHOTGUN_COST
+
+    def can_buy_assault_rifle(self, money: int) -> bool:
+        return not self.owns_assault_rifle and money >= ASSAULT_RIFLE_COST
+
+    def buy_shotgun(self, money: int) -> int:
+        if self.owns_shotgun or money < SHOTGUN_COST:
+            return money
+        self.owns_shotgun = True
+        return money - SHOTGUN_COST
+
+    def buy_assault_rifle(self, money: int) -> int:
+        if self.owns_assault_rifle or money < ASSAULT_RIFLE_COST:
+            return money
+        self.owns_assault_rifle = True
+        return money - ASSAULT_RIFLE_COST
+
+    # ── price helpers (for selected weapon) ────────────────────────────────
+
+    @staticmethod
+    def _price_for_level(level: int) -> int:
+        """Return the cost to buy the *next* level (i.e. going from
+        *level* → *level + 1*)."""
+        return int(UPGRADE_BASE_COST * (UPGRADE_PRICE_MULTIPLIER ** level))
+
+    @property
+    def damage_price(self) -> int:
+        return self.get_weapon_upgrades(self.selected_weapon).damage_price
+
+    @property
+    def ammo_price(self) -> int:
+        return self.get_weapon_upgrades(self.selected_weapon).ammo_price
+
+    @property
+    def reload_price(self) -> int:
+        return self.get_weapon_upgrades(self.selected_weapon).reload_price
+
+    @property
     def repair_price(self) -> int:
         return int(REPAIR_BASE_COST * (REPAIR_PRICE_MULTIPLIER ** self.repair_count))
 
@@ -81,18 +194,19 @@ class UpgradeState:
 
     @property
     def bonus_damage(self) -> int:
-        """Total extra damage from upgrades."""
-        return self.damage_level * UPGRADE_DAMAGE_AMOUNT
+        """Total extra damage from upgrades for selected weapon."""
+        return self.get_weapon_upgrades(self.selected_weapon).bonus_damage
 
     @property
     def bonus_ammo(self) -> int:
-        """Total extra max-ammo from upgrades."""
-        return self.ammo_level * UPGRADE_AMMO_AMOUNT
+        """Total extra max-ammo from upgrades for selected weapon."""
+        return self.get_weapon_upgrades(self.selected_weapon).bonus_ammo
 
     @property
     def reload_time(self) -> float:
-        """Current reload time after all reload upgrades."""
-        return PLAYER_RELOAD_TIME * (UPGRADE_RELOAD_FACTOR ** self.reload_level)
+        """Current reload time after all reload upgrades for selected weapon."""
+        base = PISTOL_RELOAD_TIME
+        return self.get_weapon_upgrades(self.selected_weapon).reload_time(base)
 
     @property
     def current_max_hp(self) -> int:
@@ -104,13 +218,13 @@ class UpgradeState:
     # ── purchase actions ─────────────────────────────────────────────────
 
     def can_buy_damage(self, money: int) -> bool:
-        return money >= self.damage_price
+        return self.get_weapon_upgrades(self.selected_weapon).can_buy_damage(money)
 
     def can_buy_ammo(self, money: int) -> bool:
-        return money >= self.ammo_price
+        return self.get_weapon_upgrades(self.selected_weapon).can_buy_ammo(money)
 
     def can_buy_reload(self, money: int) -> bool:
-        return money >= self.reload_price
+        return self.get_weapon_upgrades(self.selected_weapon).can_buy_reload(money)
 
     def can_buy_repair(self, money: int) -> bool:
         return money >= self.repair_price
@@ -150,27 +264,15 @@ class UpgradeState:
 
     def buy_damage(self, money: int) -> int:
         """Purchase a damage upgrade.  Returns the remaining money."""
-        cost = self.damage_price
-        if money < cost:
-            return money
-        self.damage_level += 1
-        return money - cost
+        return self.get_weapon_upgrades(self.selected_weapon).buy_damage(money)
 
     def buy_ammo(self, money: int) -> int:
         """Purchase an ammo upgrade.  Returns the remaining money."""
-        cost = self.ammo_price
-        if money < cost:
-            return money
-        self.ammo_level += 1
-        return money - cost
+        return self.get_weapon_upgrades(self.selected_weapon).buy_ammo(money)
 
     def buy_reload(self, money: int) -> int:
         """Purchase a reload upgrade.  Returns the remaining money."""
-        cost = self.reload_price
-        if money < cost:
-            return money
-        self.reload_level += 1
-        return money - cost
+        return self.get_weapon_upgrades(self.selected_weapon).buy_reload(money)
 
     def buy_repair(self, money: int, house) -> int:
         """Purchase Repair House.  Fully heals the house.  Returns remaining money."""
@@ -233,6 +335,25 @@ class UpgradeState:
             weapon.ammo = weapon.max_ammo
         # Top off ammo at start of new day
         weapon.ammo = weapon.max_ammo
+
+    def apply_to_pistol(self, pistol):
+        """Apply pistol-specific upgrades."""
+        from storm_the_house.core.settings import PISTOL_DAMAGE, PISTOL_MAX_AMMO, PISTOL_RELOAD_TIME
+        upgrades = self.pistol_upgrades
+        pistol.damage = PISTOL_DAMAGE + upgrades.bonus_damage
+        pistol.max_ammo = PISTOL_MAX_AMMO + upgrades.bonus_ammo
+        pistol.reload_time = upgrades.reload_time(PISTOL_RELOAD_TIME)
+        pistol.ammo = pistol.max_ammo
+
+    def apply_to_shotgun(self, shotgun):
+        """Apply shotgun-specific upgrades (placeholder for now)."""
+        from storm_the_house.core.settings import SHOTGUN_MAX_AMMO, SHOTGUN_SHELL_RELOAD_TIME
+        upgrades = self.shotgun_upgrades
+        # Shotgun damage is per-pellet, so we add to that
+        shotgun.damage = 1 + upgrades.bonus_damage
+        shotgun.max_ammo = SHOTGUN_MAX_AMMO + upgrades.bonus_ammo
+        shotgun.reload_time = upgrades.reload_time(SHOTGUN_SHELL_RELOAD_TIME)
+        shotgun.ammo = shotgun.max_ammo
 
     def apply_to_house(self, house):
         """Sync the house's max HP and fortify level to match upgrades.

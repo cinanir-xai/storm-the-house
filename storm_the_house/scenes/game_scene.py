@@ -8,6 +8,9 @@ Each instance represents a single *day*.
 
 from __future__ import annotations
 
+import math
+import time
+
 import pygame
 
 from storm_the_house.core.settings import (
@@ -24,7 +27,7 @@ from storm_the_house.rendering.crosshair import CrosshairRenderer
 from storm_the_house.rendering.hud import HUDRenderer
 from storm_the_house.entities.house import House
 from storm_the_house.entities.enemy_manager import EnemyManager
-from storm_the_house.entities.weapon import Weapon
+from storm_the_house.entities.weapons import WeaponManager, Weapon, Shotgun
 from storm_the_house.entities.particles import ParticleManager
 from storm_the_house.entities.upgrades import UpgradeState
 from storm_the_house.entities.hired_help import HiredHelp
@@ -41,8 +44,8 @@ class GameScene:
         Starting money carried over from previous day.
     house : House | None
         Existing house to reuse across days (preserves HP / damage).
-    weapon : Weapon | None
-        Existing weapon to reuse across days.
+    weapon_manager : WeaponManager | None
+        Existing weapon manager to reuse across days.
     upgrades : UpgradeState | None
         Persistent upgrade tracker shared across days.
     """
@@ -51,23 +54,22 @@ class GameScene:
 
     def __init__(self, day: int = 1, money: int = 0,
                  house: House | None = None,
-                 weapon: Weapon | None = None,
+                 weapon_manager: WeaponManager | None = None,
                  upgrades: UpgradeState | None = None):
         self.day = day
         self.sky = SkyRenderer()
         self.ground = GroundRenderer()
         self.background = BackgroundRenderer()
 
-        # Reuse house / weapon across days so HP and ammo persist
+        # Reuse house / weapon manager across days so HP and ammo persist
         self.house = house if house is not None else House()
-        self.weapon = weapon if weapon is not None else Weapon()
+        self.weapon_manager = weapon_manager if weapon_manager is not None else WeaponManager()
 
         # Upgrades (persistent across days)
         self.upgrades = upgrades if upgrades is not None else UpgradeState()
 
-        # Apply upgrades to weapon and house at the start of each day
-        self.upgrades.apply_to_weapon(self.weapon)
-        self.upgrades.apply_to_house(self.house)
+        # Apply upgrades to weapons and house at the start of each day
+        self._apply_upgrades()
 
         # Enemy manager – needs the house left edge and day for difficulty scaling
         self.enemy_manager = EnemyManager(house_left_x=self.house.x, day=day)
@@ -84,6 +86,9 @@ class GameScene:
 
         # Debug menu toggle (Q)
         self._debug_menu_visible: bool = False
+
+        # God mode (G key)
+        self._god_mode: bool = False
 
         # Kill counter (this day only)
         self.kills: int = 0
@@ -114,7 +119,27 @@ class GameScene:
         # Last frame snapshot for EOD background
         self.last_frame: pygame.Surface | None = None
 
+        # Reload key held state for shotgun
+        self._reload_key_held: bool = False
+
+    def _apply_upgrades(self):
+        """Apply all upgrades to weapons and house."""
+        # Apply pistol upgrades
+        self.upgrades.apply_to_pistol(self.weapon_manager.pistol)
+
+        # Apply shotgun upgrades if owned
+        if self.weapon_manager.shotgun:
+            self.upgrades.apply_to_shotgun(self.weapon_manager.shotgun)
+
+        # Apply house upgrades
+        self.upgrades.apply_to_house(self.house)
+
     # ── properties ────────────────────────────────────────────────────
+
+    @property
+    def weapon(self) -> Weapon:
+        """Get the current weapon."""
+        return self.weapon_manager.current_weapon
 
     @property
     def day_progress(self) -> float:
@@ -158,18 +183,36 @@ class GameScene:
 
     def _handle_shoot(self, mx: int, my: int):
         """Process a left-click at screen position (mx, my)."""
-        if not self.weapon.try_fire():
+        weapon = self.weapon
+        result = weapon.try_fire(mx, my)
+
+        if not result.success:
             return
 
+        # Process each pellet (shotgun has multiple, pistol has one)
+        any_hit = False
+        for pellet_x, pellet_y in result.pellets:
+            hit = self._process_pellet(pellet_x, pellet_y, weapon.damage)
+            if hit:
+                any_hit = True
+
+        # If no pellets hit and we're on the ground, emit dust
+        if not any_hit and my > self._horizon_y:
+            for pellet_x, pellet_y in result.pellets:
+                if pellet_y > self._horizon_y:
+                    self.particles.emit_dust(pellet_x, pellet_y)
+
+    def _process_pellet(self, px: int, py: int, damage: int) -> bool:
+        """Process a single pellet hit. Returns True if something was hit."""
         # Check armored cars first (they're bigger targets)
         for car in self.enemy_manager.armored_cars:
             if not car.alive:
                 continue
             rect = car.get_hit_rect()
-            if rect.collidepoint(mx, my):
-                destroyed = car.take_damage(self.weapon.damage)
-                bx = max(rect.left, min(mx, rect.right))
-                by = max(rect.top, min(my, rect.bottom))
+            if rect.collidepoint(px, py):
+                destroyed = car.take_damage(damage)
+                bx = max(rect.left, min(px, rect.right))
+                by = max(rect.top, min(py, rect.bottom))
                 self.particles.emit_blood(bx, by)
                 if destroyed:
                     self.money += ARMORED_CAR_MONEY_REWARD
@@ -180,7 +223,7 @@ class GameScene:
                     self.particles.emit_explosion(cx, cy, scale=car.scale)
                     self.particles.emit_debris(cx, cy, scale=car.scale)
                     self.particles.emit_smoke(cx, cy - 20, count=12)
-                return  # Hit an armored car, stop checking
+                return True
 
         # Then check regular enemies (sorted by depth for proper hit priority)
         enemies_sorted = sorted(
@@ -189,38 +232,50 @@ class GameScene:
             reverse=True,
         )
 
-        hit = False
         for enemy in enemies_sorted:
             if not enemy.alive:
                 continue
             rect = enemy.get_hit_rect()
-            if rect.collidepoint(mx, my):
-                killed = enemy.take_damage(self.weapon.damage)
-                bx = max(rect.left, min(mx, rect.right))
-                by = max(rect.top, min(my, rect.bottom))
+            if rect.collidepoint(px, py):
+                killed = enemy.take_damage(damage)
+                bx = max(rect.left, min(px, rect.right))
+                by = max(rect.top, min(py, rect.bottom))
                 self.particles.emit_blood(bx, by)
                 if killed:
                     self.money += MONEY_PER_KILL
                     self.kills += 1
-                hit = True
-                break
+                return True
 
-        if not hit and my > self._horizon_y:
-            self.particles.emit_dust(mx, my)
+        return False
 
-    def _handle_reload(self):
-        self.weapon.start_reload()
+    def _handle_reload_press(self):
+        """Handle reload key press."""
+        weapon = self.weapon
+        if isinstance(weapon, Shotgun):
+            weapon.start_reload()
+            self._reload_key_held = True
+        else:
+            weapon.start_reload()
+
+    def _handle_reload_release(self):
+        """Handle reload key release."""
+        weapon = self.weapon
+        if isinstance(weapon, Shotgun):
+            weapon.release_reload()
+            self._reload_key_held = False
 
     def _process_enemy_shots(self):
         # Regular enemy shots
         for enemy in self.enemy_manager.enemies:
             if enemy.fired_this_frame:
-                self.house.take_damage(ENEMY_SHOT_DAMAGE)
+                if not self._god_mode:
+                    self.house.take_damage(ENEMY_SHOT_DAMAGE)
 
         # Armored car shots (same damage, 3x faster rate)
         for car in self.enemy_manager.armored_cars:
             if car.fired_this_frame:
-                self.house.take_damage(ENEMY_SHOT_DAMAGE)
+                if not self._god_mode:
+                    self.house.take_damage(ENEMY_SHOT_DAMAGE)
 
     # ── tick / draw ──────────────────────────────────────────────────────
 
@@ -235,10 +290,10 @@ class GameScene:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         self._handle_shoot(*event.pos)
-                    elif event.button == 3:
-                        self._handle_reload()
                 elif event.type == pygame.KEYDOWN:
-                    self._handle_debug_key(event.key)
+                    self._handle_key_press(event.key)
+                elif event.type == pygame.KEYUP:
+                    self._handle_key_release(event.key)
 
         # Apply debug time scale
         dt *= self._time_scale
@@ -256,7 +311,7 @@ class GameScene:
         self.ground.update(dt)
         self.house.update(dt)
         self.enemy_manager.update(dt)
-        self.weapon.update(dt)
+        self.weapon_manager.update(dt)
         self.particles.update(dt)
 
         self._process_enemy_shots()
@@ -276,26 +331,44 @@ class GameScene:
         if self.house.hp <= 0:
             self._game_over = True
 
-    # ── debug controls ─────────────────────────────────────────────────
-
-    def _handle_debug_key(self, key: int):
-        """Process debug key presses (E / R / Y / T / Q)."""
-        if key == pygame.K_q:
+    def _handle_key_press(self, key: int):
+        """Handle key press events."""
+        # Weapon switching (1, 2, 3 keys)
+        if key == pygame.K_1:
+            self.weapon_manager.switch_to(0)
+        elif key == pygame.K_2:
+            if self.weapon_manager.owned_count > 1:
+                self.weapon_manager.switch_to(1)
+        elif key == pygame.K_3:
+            if self.weapon_manager.owned_count > 2:
+                self.weapon_manager.switch_to(2)
+        elif key == pygame.K_r:
+            self._handle_reload_press()
+        elif key == pygame.K_q:
             # Toggle debug menu
             self._debug_menu_visible = not self._debug_menu_visible
         elif key == pygame.K_e:
             self.money += DEBUG_MONEY_ADD
-        elif key == pygame.K_r:
-            # Speed up
-            self._time_scale = min(TIME_SCALE_MAX,
-                                   self._time_scale * TIME_SCALE_STEP)
-        elif key == pygame.K_y:
-            # Slow down
-            self._time_scale = max(TIME_SCALE_MIN,
-                                   self._time_scale / TIME_SCALE_STEP)
+        elif key == pygame.K_g:
+            # Toggle God mode
+            self._god_mode = not self._god_mode
         elif key == pygame.K_t:
             # Spawn armored car (debug)
             self.enemy_manager.spawn_armored_car()
+        # R and Y for time scale are handled differently now
+        elif key == pygame.K_f:
+            # Speed up time (moved from R to F)
+            self._time_scale = min(TIME_SCALE_MAX,
+                                   self._time_scale * TIME_SCALE_STEP)
+        elif key == pygame.K_y:
+            # Slow down time
+            self._time_scale = max(TIME_SCALE_MIN,
+                                   self._time_scale / TIME_SCALE_STEP)
+
+    def _handle_key_release(self, key: int):
+        """Handle key release events."""
+        if key == pygame.K_r:
+            self._handle_reload_release()
 
     def draw(self, surface: pygame.Surface, time_ms: int):
         """Render the full scene in back-to-front order."""
@@ -336,10 +409,12 @@ class GameScene:
         surface.blit(self._vignette, (0, 0))
 
         # 8. HUD (ammo, house HP, money, kills)
-        self.hud.draw(surface, self.weapon.ammo, self.weapon.max_ammo,
-                      self.weapon.is_reloading, self.weapon.reload_progress,
+        weapon = self.weapon
+        self.hud.draw(surface, weapon.ammo, weapon.max_ammo,
+                      weapon.is_reloading, weapon.reload_progress,
                       self.house.hp, self.house.max_hp,
-                      self.money, self.kills)
+                      self.money, self.kills,
+                      weapon.weapon_type, weapon.name)
 
         # 9. Day indicator (top-center)
         self._draw_day_hud(surface)
@@ -349,14 +424,151 @@ class GameScene:
             self._draw_speed_indicator(surface)
 
         # 11. Crosshair (always on top of everything)
-        self.crosshair.draw(surface, self.weapon.reload_progress)
+        self.crosshair.draw(surface, weapon.reload_progress)
 
         # 12. Debug menu (only when toggled)
         if self._debug_menu_visible:
             self._draw_debug_menu(surface)
 
+        # 13. God mode indicator
+        if self._god_mode:
+            self._draw_god_mode_indicator(surface)
+
+        # 14. Draw current weapon in bottom-right corner
+        self._draw_weapon_display(surface, weapon)
+
         # Keep a snapshot for the end-of-day background
         self.last_frame = surface.copy()
+
+    def _draw_weapon_display(self, surface: pygame.Surface, weapon):
+        """Draw the current weapon in the bottom-right corner."""
+        weapon_type = weapon.weapon_type
+
+        # Position for weapon display (bottom-right, above house HP bar)
+        wx = SCREEN_WIDTH - 220
+        wy = SCREEN_HEIGHT - 180
+
+        if weapon_type == "shotgun":
+            self._draw_shotgun_model(surface, wx, wy, weapon)
+        elif weapon_type == "assault_rifle":
+            self._draw_rifle_model(surface, wx, wy, weapon)
+        else:
+            self._draw_pistol_model(surface, wx, wy, weapon)
+
+    def _draw_pistol_model(self, surface: pygame.Surface, x: int, y: int, weapon):
+        """Draw a pistol model."""
+        # Slide (top part)
+        slide_col = (60, 60, 65)
+        pygame.draw.rect(surface, slide_col, pygame.Rect(x, y, 80, 20), border_radius=2)
+        # Slide serrations
+        for i in range(5):
+            sx = x + 60 + i * 4
+            pygame.draw.line(surface, (45, 45, 50), (sx, y + 2), (sx, y + 18), 1)
+
+        # Barrel
+        pygame.draw.rect(surface, (50, 50, 55), pygame.Rect(x + 75, y + 5, 15, 10), border_radius=1)
+
+        # Frame
+        frame_col = (55, 55, 60)
+        pygame.draw.rect(surface, frame_col, pygame.Rect(x, y + 18, 70, 15), border_radius=2)
+
+        # Trigger guard
+        pygame.draw.arc(surface, frame_col, pygame.Rect(x + 25, y + 28, 20, 15), 0, math.pi, 3)
+
+        # Grip
+        grip_col = (90, 60, 35)
+        pygame.draw.polygon(surface, grip_col, [
+            (x, y + 33),
+            (x + 35, y + 33),
+            (x + 40, y + 85),
+            (x - 5, y + 85),
+        ])
+        # Grip texture
+        for i in range(8):
+            gy = y + 40 + i * 5
+            pygame.draw.line(surface, (70, 45, 25), (x + 2, gy), (x + 32, gy), 1)
+
+        # Magazine
+        pygame.draw.rect(surface, (50, 50, 55), pygame.Rect(x + 5, y + 35, 15, 30), border_radius=1)
+
+    def _draw_shotgun_model(self, surface: pygame.Surface, x: int, y: int, weapon):
+        """Draw an M870-style pump-action shotgun model."""
+        # Barrel (long, top)
+        barrel_col = (50, 50, 55)
+        pygame.draw.rect(surface, barrel_col, pygame.Rect(x + 60, y - 10, 100, 12), border_radius=2)
+        # Barrel end
+        pygame.draw.ellipse(surface, (40, 40, 45), pygame.Rect(x + 155, y - 11, 10, 14))
+
+        # Magazine tube (under barrel)
+        pygame.draw.rect(surface, (55, 55, 60), pygame.Rect(x + 60, y + 2, 90, 8), border_radius=2)
+
+        # Receiver (main body)
+        receiver_col = (45, 45, 50)
+        pygame.draw.rect(surface, receiver_col, pygame.Rect(x, y, 70, 30), border_radius=3)
+        # Ejection port
+        pygame.draw.rect(surface, (30, 30, 35), pygame.Rect(x + 35, y + 3, 20, 12), border_radius=1)
+
+        # Pump (wooden, under receiver)
+        pump_col = (110, 70, 40)
+        pump_offset = 5 if hasattr(weapon, '_is_pumping') and weapon._is_pumping else 0
+        pygame.draw.rect(surface, pump_col, pygame.Rect(x + 15 - pump_offset, y + 28, 45, 18), border_radius=3)
+        # Pump grip texture
+        for i in range(6):
+            py = y + 31 + i * 2
+            pygame.draw.line(surface, (90, 55, 30), (x + 18 - pump_offset, py), (x + 57 - pump_offset, py), 1)
+
+        # Stock (wooden)
+        stock_col = (100, 65, 35)
+        pygame.draw.polygon(surface, stock_col, [
+            (x - 5, y + 5),
+            (x - 60, y - 10),
+            (x - 80, y + 20),
+            (x - 75, y + 50),
+            (x - 30, y + 55),
+            (x, y + 30),
+        ])
+        # Stock texture
+        pygame.draw.line(surface, (80, 50, 25), (x - 10, y + 10), (x - 70, y + 25), 2)
+        pygame.draw.line(surface, (80, 50, 25), (x - 15, y + 20), (x - 72, y + 35), 2)
+
+        # Trigger guard
+        pygame.draw.arc(surface, receiver_col, pygame.Rect(x - 5, y + 25, 25, 15), 0, math.pi, 3)
+
+        # Shell indicator (show loaded shells visually)
+        for i in range(weapon.ammo):
+            sx = x - 55 + i * 12
+            sy = y + 60
+            # Draw small shell
+            pygame.draw.rect(surface, (180, 140, 60), pygame.Rect(sx, sy, 8, 15), border_radius=1)
+            pygame.draw.rect(surface, (200, 50, 30), pygame.Rect(sx, sy, 8, 8), border_radius=1)
+
+    def _draw_rifle_model(self, surface: pygame.Surface, x: int, y: int, weapon):
+        """Draw an assault rifle model (placeholder)."""
+        # Barrel
+        pygame.draw.rect(surface, (50, 50, 55), pygame.Rect(x + 50, y, 100, 10), border_radius=2)
+
+        # Receiver
+        pygame.draw.rect(surface, (45, 45, 50), pygame.Rect(x, y - 5, 60, 25), border_radius=2)
+
+        # Magazine
+        pygame.draw.rect(surface, (55, 55, 60), pygame.Rect(x + 10, y + 20, 20, 35), border_radius=1)
+
+        # Stock
+        pygame.draw.polygon(surface, (90, 60, 35), [
+            (x - 5, y),
+            (x - 40, y - 5),
+            (x - 50, y + 15),
+            (x - 45, y + 35),
+            (x, y + 20),
+        ])
+
+        # Grip
+        pygame.draw.polygon(surface, (85, 55, 30), [
+            (x + 25, y + 20),
+            (x + 15, y + 45),
+            (x + 30, y + 50),
+            (x + 35, y + 25),
+        ])
 
     # ── day HUD ──────────────────────────────────────────────────────────
 
@@ -442,9 +654,10 @@ class GameScene:
         lines = [
             "Debug Controls:",
             "E - Add money",
-            "R - Speed up time",
+            "F - Speed up time",
             "Y - Slow down time",
             "T - Spawn armored truck",
+            "G - Toggle God mode",
             "Q - Toggle debug menu",
         ]
 
@@ -468,4 +681,27 @@ class GameScene:
         for text_surf in rendered:
             surface.blit(text_surf, (x + 10, ty))
             ty += text_surf.get_height()
+
+    def _draw_god_mode_indicator(self, surface: pygame.Surface):
+        """Draw 'GOD MODE' indicator when active."""
+        font = self._get_font_day()
+        text = "GOD MODE"
+        color = (255, 215, 0)  # Gold
+        label = font.render(text, True, color)
+        shadow = font.render(text, True, (0, 0, 0))
+
+        # Position top-right
+        x = SCREEN_WIDTH - label.get_width() - 20
+        y = 60
+
+        # Pulsing effect
+        alpha = int(180 + 75 * abs(math.sin(time.time() * 3)))
+
+        # Draw with glow
+        glow_surf = pygame.Surface((label.get_width() + 20, label.get_height() + 10), pygame.SRCALPHA)
+        pygame.draw.rect(glow_surf, (255, 215, 0, 50), glow_surf.get_rect(), border_radius=4)
+        surface.blit(glow_surf, (x - 10, y - 5))
+
+        surface.blit(shadow, (x + 1, y + 1))
+        surface.blit(label, (x, y))
 
