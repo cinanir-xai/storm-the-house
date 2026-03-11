@@ -20,6 +20,10 @@ from storm_the_house.core.settings import (
     SHOTGUN_UPGRADE_AMMO_BONUS, SHOTGUN_UPGRADE_PELLET_BONUS, SHOTGUN_UPGRADE_SPEED_BONUS,
     ASSAULT_RIFLE_MAX_AMMO, ASSAULT_RIFLE_DAMAGE, ASSAULT_RIFLE_RELOAD_TIME,
     ASSAULT_RIFLE_NAME, SHOTGUN_COST, ASSAULT_RIFLE_COST,
+    ASSAULT_RIFLE_FIRE_RATE, ASSAULT_RIFLE_BASE_SPREAD, ASSAULT_RIFLE_AUTO_SPREAD,
+    ASSAULT_RIFLE_BURST_WINDOW, ASSAULT_RIFLE_BURST_SPREAD_BONUS,
+    ASSAULT_RIFLE_RECOIL_KICK, ASSAULT_RIFLE_RECOIL_JITTER,
+    ASSAULT_RIFLE_UPGRADE_MAG_BONUS, ASSAULT_RIFLE_UPGRADE_RECOIL_REDUCTION,
 )
 
 
@@ -105,8 +109,6 @@ class Pistol(Weapon):
         if not self.can_fire:
             return FireResult(success=False, pellets=[])
         self.ammo -= 1
-        if self.ammo <= 0:
-            self.start_reload()
         return FireResult(success=True, pellets=[(target_x, target_y)])
 
     def start_reload(self):
@@ -239,22 +241,84 @@ class Shotgun(Weapon):
 
 
 class AssaultRifle(Weapon):
-    """Assault rifle - placeholder for future implementation."""
+    """Automatic assault rifle with recoil and burst accuracy."""
 
     def __init__(self):
         super().__init__(ASSAULT_RIFLE_NAME, ASSAULT_RIFLE_MAX_AMMO, ASSAULT_RIFLE_DAMAGE, ASSAULT_RIFLE_RELOAD_TIME)
+        self._cooldown = 0.0
+        self._auto_timer = 0.0
+        self._last_shot_timer = 999.0
+        self._recoil_offset = (0, 0)
+        self._trigger_held = False
+
+        self._mag_upgrade = 0
+        self._reload_upgrade = 0
+        self._compensator_level = 0
+        self._base_max_ammo = ASSAULT_RIFLE_MAX_AMMO
+        self._base_reload_time = ASSAULT_RIFLE_RELOAD_TIME
 
     @property
     def weapon_type(self) -> str:
         return "assault_rifle"
 
+    @property
+    def can_fire(self) -> bool:
+        return self.ammo > 0 and not self._reloading and self._cooldown <= 0.0
+
+    @property
+    def recoil_offset(self) -> tuple[int, int]:
+        return self._recoil_offset
+
+    @property
+    def effective_spread(self) -> float:
+        if self._last_shot_timer <= ASSAULT_RIFLE_BURST_WINDOW:
+            return ASSAULT_RIFLE_BASE_SPREAD * ASSAULT_RIFLE_BURST_SPREAD_BONUS
+        return ASSAULT_RIFLE_BASE_SPREAD + min(ASSAULT_RIFLE_AUTO_SPREAD, self._auto_timer * 60)
+
+    @property
+    def recoil_multiplier(self) -> float:
+        return max(0.1, (1 - ASSAULT_RIFLE_UPGRADE_RECOIL_REDUCTION) ** self._compensator_level)
+
+    def apply_upgrades(self, mag_level: int, reload_level: int, compensator_level: int):
+        self._mag_upgrade = mag_level
+        self._reload_upgrade = reload_level
+        self._compensator_level = compensator_level
+
+        self.max_ammo = self._base_max_ammo + (mag_level * ASSAULT_RIFLE_UPGRADE_MAG_BONUS)
+        self.reload_time = self._base_reload_time * (0.85 ** reload_level)
+        self.ammo = self.max_ammo
+
     def try_fire(self, target_x: int, target_y: int) -> FireResult:
         if not self.can_fire:
             return FireResult(success=False, pellets=[])
+
         self.ammo -= 1
-        if self.ammo <= 0:
-            self.start_reload()
-        return FireResult(success=True, pellets=[(target_x, target_y)])
+        self._cooldown = ASSAULT_RIFLE_FIRE_RATE
+        if not self._trigger_held:
+            self._auto_timer = 0.0
+        self._auto_timer = min(0.6, self._auto_timer + ASSAULT_RIFLE_FIRE_RATE)
+        self._last_shot_timer = 0.0
+        self._trigger_held = True
+
+        recoil_scale = self.recoil_multiplier
+        recoil_x = random.randint(-ASSAULT_RIFLE_RECOIL_JITTER, ASSAULT_RIFLE_RECOIL_JITTER)
+        recoil_y = random.randint(-ASSAULT_RIFLE_RECOIL_KICK, -ASSAULT_RIFLE_RECOIL_KICK // 2)
+        recoil_x = int(recoil_x * recoil_scale)
+        recoil_y = int(recoil_y * recoil_scale)
+        self._recoil_offset = (recoil_x, recoil_y)
+
+        spread = self.effective_spread
+        spread_x = random.uniform(-spread, spread)
+        spread_y = random.uniform(-spread, spread)
+
+        return FireResult(
+            success=True,
+            pellets=[(int(target_x + spread_x + recoil_x), int(target_y + spread_y + recoil_y))],
+        )
+
+    def release_trigger(self):
+        self._trigger_held = False
+        self._auto_timer = 0.0
 
     def start_reload(self):
         if self._reloading or self.ammo == self.max_ammo:
@@ -264,6 +328,20 @@ class AssaultRifle(Weapon):
 
     def update(self, dt: float):
         super().update(dt)
+        self._last_shot_timer += dt
+        if self._cooldown > 0:
+            self._cooldown -= dt
+
+        # Recover recoil over time
+        if self._auto_timer > 0:
+            self._auto_timer = max(0.0, self._auto_timer - dt * 1.8)
+        if self._recoil_offset != (0, 0):
+            rx, ry = self._recoil_offset
+            damp = min(1.0, dt * 8)
+            self._recoil_offset = (int(rx * (1 - damp)), int(ry * (1 - damp)))
+            if abs(self._recoil_offset[0]) <= 1 and abs(self._recoil_offset[1]) <= 1:
+                self._recoil_offset = (0, 0)
+
         if self._reloading:
             self._reload_elapsed += dt
             if self._reload_elapsed >= self.reload_time:

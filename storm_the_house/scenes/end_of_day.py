@@ -177,6 +177,8 @@ class EndOfDayScene:
         # Build weapon-specific upgrade cards
         if u.selected_weapon == "shotgun":
             cards.extend(self._build_shotgun_upgrade_cards(row1_x, row1_y, cw, ch, gap))
+        elif u.selected_weapon == "assault_rifle":
+            cards.extend(self._build_assault_rifle_upgrade_cards(row1_x, row1_y, cw, ch, gap))
         else:
             cards.extend(self._build_pistol_upgrade_cards(row1_x, row1_y, cw, ch, gap))
 
@@ -339,6 +341,57 @@ class EndOfDayScene:
             can_buy_fn=lambda m: weapon_upgrades.can_buy_speed(m),
             buy_fn=lambda m: weapon_upgrades.buy_speed(m),
             icon_fn=self._draw_shotgun_speed_icon,
+            rect=pygame.Rect(row1_x + 2 * (cw + gap), row1_y, cw, ch),
+        ))
+
+        return cards
+
+    def _build_assault_rifle_upgrade_cards(self, row1_x: int, row1_y: int, cw: int, ch: int, gap: int) -> list[_UpgradeCard]:
+        """Build upgrade cards for assault rifle."""
+        from storm_the_house.core.settings import (
+            ASSAULT_RIFLE_MAX_AMMO, ASSAULT_RIFLE_RELOAD_TIME,
+            ASSAULT_RIFLE_UPGRADE_MAG_BONUS, ASSAULT_RIFLE_UPGRADE_RECOIL_REDUCTION,
+        )
+        u = self.upgrades
+        weapon_upgrades = u.assault_rifle_upgrades
+        cards: list[_UpgradeCard] = []
+
+        # 1) Larger Magazine (+5 ammo)
+        cards.append(_UpgradeCard(
+            key="rifle_mag",
+            title="Larger Magazine",
+            desc_fn=lambda: f"Ammo: {ASSAULT_RIFLE_MAX_AMMO + weapon_upgrades.bonus_ammo} (+{ASSAULT_RIFLE_UPGRADE_MAG_BONUS})",
+            price_fn=lambda: weapon_upgrades.mag_price,
+            level_fn=lambda: weapon_upgrades.mag_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_mag(m),
+            buy_fn=lambda m: weapon_upgrades.buy_mag(m),
+            icon_fn=self._draw_rifle_mag_icon,
+            rect=pygame.Rect(row1_x, row1_y, cw, ch),
+        ))
+
+        # 2) Compensator (reduces recoil)
+        cards.append(_UpgradeCard(
+            key="rifle_comp",
+            title="Compensator",
+            desc_fn=lambda: f"Recoil: -{int((1 - (1 - ASSAULT_RIFLE_UPGRADE_RECOIL_REDUCTION) ** weapon_upgrades.compensator_level) * 100)}%",
+            price_fn=lambda: weapon_upgrades.compensator_price,
+            level_fn=lambda: weapon_upgrades.compensator_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_compensator(m),
+            buy_fn=lambda m: weapon_upgrades.buy_compensator(m),
+            icon_fn=self._draw_rifle_compensator_icon,
+            rect=pygame.Rect(row1_x + cw + gap, row1_y, cw, ch),
+        ))
+
+        # 3) Faster Reload
+        cards.append(_UpgradeCard(
+            key="rifle_reload",
+            title="Faster Reload",
+            desc_fn=lambda: f"Reload: {ASSAULT_RIFLE_RELOAD_TIME * weapon_upgrades.reload_multiplier:.2f}s",
+            price_fn=lambda: weapon_upgrades.reload_price,
+            level_fn=lambda: weapon_upgrades.reload_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_reload(m),
+            buy_fn=lambda m: weapon_upgrades.buy_reload(m),
+            icon_fn=self._draw_rifle_reload_icon,
             rect=pygame.Rect(row1_x + 2 * (cw + gap), row1_y, cw, ch),
         ))
 
@@ -802,13 +855,17 @@ class EndOfDayScene:
         """Draw a small assault rifle icon."""
         col = UPGRADE_CARD_ICON
         # Barrel
-        pygame.draw.rect(surface, col, pygame.Rect(cx - 2, cy - 14, 4, 14), border_radius=1)
+        pygame.draw.rect(surface, col, pygame.Rect(cx - 2, cy - 16, 4, 16), border_radius=1)
+        # Front sight
+        pygame.draw.rect(surface, (60, 60, 65), pygame.Rect(cx - 3, cy - 18, 6, 4), border_radius=1)
         # Receiver
-        pygame.draw.rect(surface, (60, 60, 65), pygame.Rect(cx - 4, cy - 4, 8, 10), border_radius=1)
+        pygame.draw.rect(surface, (60, 60, 65), pygame.Rect(cx - 5, cy - 4, 10, 10), border_radius=1)
+        # Carry handle
+        pygame.draw.rect(surface, (80, 80, 85), pygame.Rect(cx - 4, cy - 8, 8, 3), border_radius=1)
         # Magazine
-        pygame.draw.rect(surface, col, pygame.Rect(cx + 3, cy + 2, 4, 8), border_radius=1)
+        pygame.draw.rect(surface, col, pygame.Rect(cx + 2, cy + 2, 5, 10), border_radius=1)
         # Stock
-        pygame.draw.rect(surface, (100, 65, 35), pygame.Rect(cx - 4, cy + 4, 8, 6), border_radius=1)
+        pygame.draw.rect(surface, (100, 65, 35), pygame.Rect(cx - 6, cy + 4, 8, 6), border_radius=1)
         # Grip
         pygame.draw.rect(surface, (100, 65, 35), pygame.Rect(cx - 3, cy + 6, 4, 6), border_radius=1)
 
@@ -863,6 +920,41 @@ class EndOfDayScene:
         pygame.draw.line(surface, (120, 200, 100), (cx + 14, cy - 4), (cx + 20, cy - 4), 2)
         pygame.draw.line(surface, (120, 200, 100), (cx + 14, cy), (cx + 22, cy), 2)
         pygame.draw.line(surface, (120, 200, 100), (cx + 14, cy + 4), (cx + 20, cy + 4), 2)
+
+    @staticmethod
+    def _draw_rifle_mag_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw icon for Larger Magazine upgrade."""
+        col = UPGRADE_CARD_ICON
+        # Magazine body
+        pygame.draw.rect(surface, col, pygame.Rect(cx - 6, cy - 10, 12, 22), border_radius=2)
+        # Rounds window
+        pygame.draw.rect(surface, (90, 85, 70), pygame.Rect(cx - 3, cy - 6, 6, 12), border_radius=1)
+        # Plus sign
+        pygame.draw.line(surface, (120, 200, 100), (cx - 10, cy), (cx - 2, cy), 2)
+        pygame.draw.line(surface, (120, 200, 100), (cx - 6, cy - 4), (cx - 6, cy + 4), 2)
+
+    @staticmethod
+    def _draw_rifle_compensator_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw icon for Compensator upgrade."""
+        col = UPGRADE_CARD_ICON
+        # Barrel tip
+        pygame.draw.rect(surface, col, pygame.Rect(cx - 12, cy - 3, 18, 6), border_radius=2)
+        # Ports
+        for i in range(3):
+            pygame.draw.circle(surface, (60, 60, 65), (cx - 6 + i * 6, cy - 6), 2)
+        # Downward arrow
+        pygame.draw.line(surface, (120, 200, 100), (cx + 8, cy - 6), (cx + 8, cy + 6), 2)
+        pygame.draw.polygon(surface, (120, 200, 100), [(cx + 8, cy + 8), (cx + 4, cy + 2), (cx + 12, cy + 2)])
+
+    @staticmethod
+    def _draw_rifle_reload_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw icon for Faster Reload upgrade."""
+        col = UPGRADE_CARD_ICON
+        # Circular arrow
+        pygame.draw.circle(surface, col, (cx, cy), 12, 2)
+        pygame.draw.arc(surface, col, pygame.Rect(cx - 12, cy - 12, 24, 24), math.pi * 0.2, math.pi * 1.6, 2)
+        # Arrow head
+        pygame.draw.polygon(surface, col, [(cx + 10, cy - 6), (cx + 16, cy - 2), (cx + 9, cy + 1)])
 
     # ── single card renderer ─────────────────────────────────────────
 

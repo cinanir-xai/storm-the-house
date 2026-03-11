@@ -39,6 +39,9 @@ from storm_the_house.core.settings import (
     SHOTGUN_COST, ASSAULT_RIFLE_COST,
     SHOTGUN_UPGRADE_AMMO_BONUS, SHOTGUN_UPGRADE_PELLET_BONUS, SHOTGUN_UPGRADE_SPEED_BONUS,
     SHOTGUN_MAX_AMMO, SHOTGUN_PELLET_COUNT, SHOTGUN_SHELL_RELOAD_TIME,
+    ASSAULT_RIFLE_UPGRADE_MAG_BONUS, ASSAULT_RIFLE_UPGRADE_RECOIL_REDUCTION,
+    ASSAULT_RIFLE_UPGRADE_BASE_COST,
+    ASSAULT_RIFLE_MAX_AMMO, ASSAULT_RIFLE_RELOAD_TIME,
 )
 
 
@@ -185,6 +188,69 @@ class ShotgunUpgradeState:
         return money - cost
 
 
+class AssaultRifleUpgradeState:
+    """Upgrade state for assault rifle with unique upgrades."""
+
+    def __init__(self):
+        self.mag_level: int = 0
+        self.compensator_level: int = 0
+        self.reload_level: int = 0
+
+    @staticmethod
+    def _price_for_level(level: int) -> int:
+        return int(ASSAULT_RIFLE_UPGRADE_BASE_COST * (UPGRADE_PRICE_MULTIPLIER ** level))
+
+    @property
+    def mag_price(self) -> int:
+        return self._price_for_level(self.mag_level)
+
+    @property
+    def compensator_price(self) -> int:
+        return self._price_for_level(self.compensator_level)
+
+    @property
+    def reload_price(self) -> int:
+        return self._price_for_level(self.reload_level)
+
+    @property
+    def bonus_ammo(self) -> int:
+        return self.mag_level * ASSAULT_RIFLE_UPGRADE_MAG_BONUS
+
+    @property
+    def reload_multiplier(self) -> float:
+        return (UPGRADE_RELOAD_FACTOR ** self.reload_level)
+
+    def can_buy_mag(self, money: int) -> bool:
+        return money >= self.mag_price
+
+    def can_buy_compensator(self, money: int) -> bool:
+        return money >= self.compensator_price
+
+    def can_buy_reload(self, money: int) -> bool:
+        return money >= self.reload_price
+
+    def buy_mag(self, money: int) -> int:
+        cost = self.mag_price
+        if money < cost:
+            return money
+        self.mag_level += 1
+        return money - cost
+
+    def buy_compensator(self, money: int) -> int:
+        cost = self.compensator_price
+        if money < cost:
+            return money
+        self.compensator_level += 1
+        return money - cost
+
+    def buy_reload(self, money: int) -> int:
+        cost = self.reload_price
+        if money < cost:
+            return money
+        self.reload_level += 1
+        return money - cost
+
+
 class UpgradeState:
     """Persistent upgrade tracker that lives across days."""
 
@@ -196,7 +262,7 @@ class UpgradeState:
         # Per-weapon upgrade states
         self.pistol_upgrades = WeaponUpgradeState()
         self.shotgun_upgrades = ShotgunUpgradeState()  # Special shotgun upgrades
-        self.assault_rifle_upgrades = WeaponUpgradeState()
+        self.assault_rifle_upgrades = AssaultRifleUpgradeState()
 
         # Currently selected weapon for upgrades display
         self.selected_weapon: str = "pistol"
@@ -437,6 +503,15 @@ class UpgradeState:
             ammo_level=upgrades.ammo_level,
             pellet_level=upgrades.pellet_level,
             speed_level=upgrades.speed_level,
+        )
+
+    def apply_to_assault_rifle(self, rifle):
+        """Apply assault rifle-specific upgrades."""
+        upgrades = self.assault_rifle_upgrades
+        rifle.apply_upgrades(
+            mag_level=upgrades.mag_level,
+            reload_level=upgrades.reload_level,
+            compensator_level=upgrades.compensator_level,
         )
 
     def apply_to_house(self, house):

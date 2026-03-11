@@ -122,6 +122,9 @@ class GameScene:
         # Reload key held state for shotgun
         self._reload_key_held: bool = False
 
+        # Automatic fire state (assault rifle)
+        self._fire_held: bool = False
+
         # Out of ammo indicator
         self._out_of_ammo_timer: float = 0.0
         self._out_of_ammo_duration: float = 0.8  # How long to show "OUT OF AMMO"
@@ -134,6 +137,10 @@ class GameScene:
         # Apply shotgun upgrades if owned
         if self.weapon_manager.shotgun:
             self.upgrades.apply_to_shotgun(self.weapon_manager.shotgun)
+
+        # Apply assault rifle upgrades if owned
+        if self.weapon_manager.assault_rifle:
+            self.upgrades.apply_to_assault_rifle(self.weapon_manager.assault_rifle)
 
         # Apply house upgrades
         self.upgrades.apply_to_house(self.house)
@@ -194,20 +201,17 @@ class GameScene:
             # Show "OUT OF AMMO" text if out of ammo
             if weapon.ammo <= 0 and not weapon.is_reloading:
                 self._out_of_ammo_timer = self._out_of_ammo_duration
+            if weapon.weapon_type == "assault_rifle":
+                self._fire_held = False
+                if hasattr(weapon, "release_trigger"):
+                    weapon.release_trigger()
             return
 
         # Process each pellet (shotgun has multiple, pistol has one)
-        any_hit = False
         for pellet_x, pellet_y in result.pellets:
             hit = self._process_pellet(pellet_x, pellet_y, weapon.damage)
-            if hit:
-                any_hit = True
-
-        # If no pellets hit and we're on the ground, emit dust
-        if not any_hit and my > self._horizon_y:
-            for pellet_x, pellet_y in result.pellets:
-                if pellet_y > self._horizon_y:
-                    self.particles.emit_dust(pellet_x, pellet_y)
+            if not hit and pellet_y > self._horizon_y:
+                self.particles.emit_dust(pellet_x, pellet_y)
 
     def _process_pellet(self, px: int, py: int, damage: int) -> bool:
         """Process a single pellet hit. Returns True if something was hit."""
@@ -296,12 +300,18 @@ class GameScene:
             for event in events:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
+                        self._fire_held = True
                         self._handle_shoot(*event.pos)
                     elif event.button == 3:
                         # Right-click also reloads
                         self._handle_reload_press()
                 elif event.type == pygame.MOUSEBUTTONUP:
-                    if event.button == 3:
+                    if event.button == 1:
+                        self._fire_held = False
+                        weapon = self.weapon
+                        if hasattr(weapon, "release_trigger"):
+                            weapon.release_trigger()
+                    elif event.button == 3:
                         self._handle_reload_release()
                 elif event.type == pygame.KEYDOWN:
                     self._handle_key_press(event.key)
@@ -314,6 +324,16 @@ class GameScene:
         # Update out of ammo timer
         if self._out_of_ammo_timer > 0:
             self._out_of_ammo_timer -= dt
+
+        # Automatic fire (assault rifle)
+        if self._fire_held and self.weapon.weapon_type == "assault_rifle":
+            if self.weapon.can_fire:
+                mx, my = pygame.mouse.get_pos()
+                self._handle_shoot(mx, my)
+            elif self.weapon.ammo <= 0 and not self.weapon.is_reloading:
+                self._fire_held = False
+                if hasattr(self.weapon, "release_trigger"):
+                    self.weapon.release_trigger()
 
         # Day timer
         self._day_elapsed += dt
@@ -353,12 +373,15 @@ class GameScene:
         # Weapon switching (1, 2, 3 keys)
         if key == pygame.K_1:
             self.weapon_manager.switch_to(0)
+            self._fire_held = False
         elif key == pygame.K_2:
             if self.weapon_manager.owned_count > 1:
                 self.weapon_manager.switch_to(1)
+                self._fire_held = False
         elif key == pygame.K_3:
             if self.weapon_manager.owned_count > 2:
                 self.weapon_manager.switch_to(2)
+                self._fire_held = False
         elif key == pygame.K_r or key == pygame.K_SPACE:
             # R and Space both reload
             self._handle_reload_press()
@@ -387,6 +410,10 @@ class GameScene:
         """Handle key release events."""
         if key == pygame.K_r or key == pygame.K_SPACE:
             self._handle_reload_release()
+        if key in (pygame.K_1, pygame.K_2, pygame.K_3):
+            weapon = self.weapon
+            if hasattr(weapon, "release_trigger"):
+                weapon.release_trigger()
 
     def draw(self, surface: pygame.Surface, time_ms: int):
         """Render the full scene in back-to-front order."""
@@ -442,7 +469,8 @@ class GameScene:
             self._draw_speed_indicator(surface)
 
         # 11. Crosshair (always on top of everything)
-        self.crosshair.draw(surface, weapon.reload_progress)
+        recoil_offset = getattr(weapon, "recoil_offset", (0, 0))
+        self.crosshair.draw(surface, weapon.reload_progress, recoil_offset)
 
         # 12. Out of ammo indicator
         if self._out_of_ammo_timer > 0:
@@ -599,32 +627,65 @@ class GameScene:
             pygame.draw.rect(surface, (200, 50, 30), pygame.Rect(sx, sy, 8, 8), border_radius=1)
 
     def _draw_rifle_model(self, surface: pygame.Surface, x: int, y: int, weapon):
-        """Draw an assault rifle model (placeholder)."""
-        # Barrel
-        pygame.draw.rect(surface, (50, 50, 55), pygame.Rect(x + 50, y, 100, 10), border_radius=2)
+        """Draw an M16-style assault rifle model."""
+        metal = (55, 55, 60)
+        dark = (40, 40, 45)
+        olive = (85, 90, 70)
+        stock_col = (75, 65, 55)
 
-        # Receiver
-        pygame.draw.rect(surface, (45, 45, 50), pygame.Rect(x, y - 5, 60, 25), border_radius=2)
+        # Barrel + muzzle
+        pygame.draw.rect(surface, metal, pygame.Rect(x + 80, y - 2, 110, 8), border_radius=2)
+        pygame.draw.rect(surface, dark, pygame.Rect(x + 185, y - 4, 12, 12), border_radius=2)
+        pygame.draw.line(surface, (90, 90, 95), (x + 190, y - 3), (x + 190, y + 7), 2)
 
-        # Magazine
-        pygame.draw.rect(surface, (55, 55, 60), pygame.Rect(x + 10, y + 20, 20, 35), border_radius=1)
+        # Front sight
+        pygame.draw.rect(surface, dark, pygame.Rect(x + 155, y - 6, 6, 16), border_radius=1)
+
+        # Carry handle / upper receiver
+        pygame.draw.rect(surface, metal, pygame.Rect(x + 20, y - 8, 70, 20), border_radius=3)
+        pygame.draw.rect(surface, dark, pygame.Rect(x + 35, y - 14, 40, 6), border_radius=2)
+
+        # Lower receiver
+        pygame.draw.rect(surface, metal, pygame.Rect(x + 10, y + 6, 70, 18), border_radius=3)
+        pygame.draw.circle(surface, dark, (x + 40, y + 15), 3)
+
+        # Magazine (curved, size reflects ammo)
+        mag_height = max(26, 36 + weapon.ammo)
+        mag_points = [
+            (x + 40, y + 22),
+            (x + 60, y + 22),
+            (x + 55, y + 22 + mag_height),
+            (x + 35, y + 22 + mag_height),
+        ]
+        pygame.draw.polygon(surface, (60, 60, 65), mag_points)
+        pygame.draw.line(surface, (90, 90, 95), (x + 38, y + 30), (x + 52, y + mag_height), 2)
+
+        # Handguard
+        pygame.draw.rect(surface, olive, pygame.Rect(x + 85, y + 6, 45, 12), border_radius=2)
+        for i in range(4):
+            pygame.draw.line(surface, (70, 75, 60), (x + 90 + i * 10, y + 8), (x + 90 + i * 10, y + 16), 1)
 
         # Stock
-        pygame.draw.polygon(surface, (90, 60, 35), [
-            (x - 5, y),
-            (x - 40, y - 5),
-            (x - 50, y + 15),
-            (x - 45, y + 35),
-            (x, y + 20),
+        pygame.draw.polygon(surface, stock_col, [
+            (x + 10, y + 6),
+            (x - 30, y - 4),
+            (x - 55, y + 8),
+            (x - 50, y + 34),
+            (x - 10, y + 28),
+            (x + 10, y + 20),
         ])
+        pygame.draw.rect(surface, dark, pygame.Rect(x - 52, y + 10, 10, 20), border_radius=2)
 
         # Grip
-        pygame.draw.polygon(surface, (85, 55, 30), [
-            (x + 25, y + 20),
-            (x + 15, y + 45),
-            (x + 30, y + 50),
-            (x + 35, y + 25),
+        pygame.draw.polygon(surface, stock_col, [
+            (x + 28, y + 22),
+            (x + 18, y + 52),
+            (x + 35, y + 55),
+            (x + 42, y + 26),
         ])
+
+        # Trigger guard
+        pygame.draw.arc(surface, dark, pygame.Rect(x + 20, y + 20, 22, 14), 0, math.pi, 3)
 
     # ── day HUD ──────────────────────────────────────────────────────────
 

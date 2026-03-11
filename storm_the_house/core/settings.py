@@ -5,8 +5,8 @@ All tunable parameters live here so they're easy to find and adjust.
 """
 
 # ── Display ──────────────────────────────────────────────────────────────────
-SCREEN_WIDTH = 2400
-SCREEN_HEIGHT = 1350
+SCREEN_WIDTH = 1440
+SCREEN_HEIGHT = 810
 FPS = 60
 TITLE = "Storm the House"
 
@@ -122,13 +122,26 @@ SHOTGUN_UPGRADE_AMMO_BONUS = 1      # +1 ammo per "Longer Barrel" upgrade
 SHOTGUN_UPGRADE_PELLET_BONUS = 2    # +2 pellets per "Buckshot" upgrade
 SHOTGUN_UPGRADE_SPEED_BONUS = 0.20  # 20% faster reload/pump per "Faster Handling"
 
-# Assault Rifle (weapon 3) - placeholder
-ASSAULT_RIFLE_MAX_AMMO = 30
+# Assault Rifle (weapon 3)
+ASSAULT_RIFLE_MAX_AMMO = 15
 ASSAULT_RIFLE_DAMAGE = 1
-ASSAULT_RIFLE_FIRE_RATE = 0.1       # seconds between shots
-ASSAULT_RIFLE_RELOAD_TIME = 2.0
+ASSAULT_RIFLE_FIRE_RATE = 0.09       # seconds between shots (full auto)
+ASSAULT_RIFLE_RELOAD_TIME = 2.2
 ASSAULT_RIFLE_NAME = "Assault Rifle"
-ASSAULT_RIFLE_COST = 1000
+ASSAULT_RIFLE_COST = 2000
+
+# Assault rifle recoil + accuracy
+ASSAULT_RIFLE_BASE_SPREAD = 6        # base random spread in pixels
+ASSAULT_RIFLE_AUTO_SPREAD = 18       # additional spread for sustained fire
+ASSAULT_RIFLE_BURST_WINDOW = 0.22    # seconds for burst accuracy
+ASSAULT_RIFLE_BURST_SPREAD_BONUS = 0.55  # multiplier to reduce spread in short bursts
+ASSAULT_RIFLE_RECOIL_KICK = 10       # pixels of recoil kick applied to aim
+ASSAULT_RIFLE_RECOIL_JITTER = 6      # random jitter per shot
+
+# Assault rifle upgrades
+ASSAULT_RIFLE_UPGRADE_MAG_BONUS = 5
+ASSAULT_RIFLE_UPGRADE_RECOIL_REDUCTION = 0.30
+ASSAULT_RIFLE_UPGRADE_BASE_COST = 250
 
 # Weapon colors
 SHOTGUN_SHELL_COLOR = (200, 50, 30)     # red shell

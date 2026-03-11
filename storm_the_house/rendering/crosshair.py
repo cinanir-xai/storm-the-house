@@ -24,13 +24,17 @@ from storm_the_house.core.settings import (
 class CrosshairRenderer:
     """Draws a crosshair at the mouse position with optional reload arc."""
 
-    def draw(self, surface: pygame.Surface, reload_progress: float = 0.0):
+    def draw(self, surface: pygame.Surface, reload_progress: float = 0.0,
+             recoil_offset: tuple[int, int] = (0, 0)):
         """
         Draw the crosshair at the current mouse position.
 
         *reload_progress* is 0.0 (not reloading) to 1.0 (reload complete).
+        *recoil_offset* is a small (x, y) jitter applied for recoil feedback.
         """
         mx, my = pygame.mouse.get_pos()
+        mx += recoil_offset[0]
+        my += recoil_offset[1]
 
         # ── reload arc (behind crosshair) ───────────────────────────────
         if reload_progress > 0.0:
