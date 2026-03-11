@@ -28,6 +28,8 @@ from storm_the_house.core.settings import (
     DEBRIS_SPEED_MIN, DEBRIS_SPEED_MAX,
     DEBRIS_LIFETIME_MIN, DEBRIS_LIFETIME_MAX,
     DEBRIS_GRAVITY, DEBRIS_COLORS,
+    BLOOD_PUDDLE_LIFETIME_MIN, BLOOD_PUDDLE_LIFETIME_MAX,
+    BLOOD_PUDDLE_SIZE_MIN, BLOOD_PUDDLE_SIZE_MAX, BLOOD_PUDDLE_COLORS,
 )
 
 
@@ -70,11 +72,38 @@ class _Particle:
         self.y += self.vy * dt
 
 
+class _BloodPuddle:
+    """Static blood puddle decal that fades out."""
+
+    __slots__ = ("x", "y", "size", "lifetime", "max_lifetime", "color")
+
+    def __init__(self, x: float, y: float, size: float, lifetime: float, color: tuple):
+        self.x = x
+        self.y = y
+        self.size = size
+        self.lifetime = lifetime
+        self.max_lifetime = lifetime
+        self.color = color
+
+    @property
+    def alive(self) -> bool:
+        return self.lifetime > 0
+
+    @property
+    def alpha(self) -> int:
+        t = max(0.0, self.lifetime / self.max_lifetime)
+        return int(200 * t)
+
+    def update(self, dt: float):
+        self.lifetime -= dt
+
+
 class ParticleManager:
     """Manages all active particle bursts."""
 
     def __init__(self):
         self._particles: list[_Particle] = []
+        self._puddles: list[_BloodPuddle] = []
 
     # ── emitters ────────────────────────────────────────────────────────
 
@@ -92,6 +121,14 @@ class ParticleManager:
             self._particles.append(
                 _Particle(x, y, vx, vy, BLOOD_GRAVITY, lifetime, color, size, drag=0.97)
             )
+
+        # Add a lingering puddle near the ground
+        puddle_lifetime = random.uniform(BLOOD_PUDDLE_LIFETIME_MIN, BLOOD_PUDDLE_LIFETIME_MAX)
+        puddle_size = random.uniform(BLOOD_PUDDLE_SIZE_MIN, BLOOD_PUDDLE_SIZE_MAX)
+        puddle_color = random.choice(BLOOD_PUDDLE_COLORS)
+        self._puddles.append(
+            _BloodPuddle(x + random.uniform(-4, 4), y + random.uniform(2, 6), puddle_size, puddle_lifetime, puddle_color)
+        )
 
     def emit_dust(self, x: float, y: float):
         """Spawn a puff of dust particles at (x, y) – for ground miss."""
@@ -161,11 +198,24 @@ class ParticleManager:
     def update(self, dt: float):
         for p in self._particles:
             p.update(dt)
+        for puddle in self._puddles:
+            puddle.update(dt)
         # Prune dead particles
         self._particles = [p for p in self._particles if p.alive]
+        self._puddles = [p for p in self._puddles if p.alive]
 
     def draw(self, surface: pygame.Surface):
         """Draw all living particles with alpha fade."""
+        for puddle in self._puddles:
+            alpha = puddle.alpha
+            if alpha <= 0:
+                continue
+            w = max(2, int(puddle.size * 1.6))
+            h = max(2, int(puddle.size))
+            tmp = pygame.Surface((w * 2, h * 2), pygame.SRCALPHA)
+            pygame.draw.ellipse(tmp, (*puddle.color, alpha), tmp.get_rect())
+            surface.blit(tmp, (int(puddle.x) - w, int(puddle.y) - h))
+
         for p in self._particles:
             alpha = p.alpha
             if alpha <= 0:

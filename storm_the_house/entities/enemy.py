@@ -24,10 +24,12 @@ from storm_the_house.core.settings import (
     ENEMY_SPAWN_Y_MARGIN_TOP, ENEMY_SPAWN_Y_MARGIN_BOT,
     MUZZLE_FLASH_COLOR, MUZZLE_FLASH_BRIGHT, MUZZLE_FLASH_DURATION,
     ENEMY_HP, ENEMY_DEATH_FADE_TIME,
+    ENEMY_DEATH_ANIM_MIN, ENEMY_DEATH_ANIM_MAX, ENEMY_CORPSE_LINGER,
     ENEMY_SPEED_VARIANCE,
 )
 from storm_the_house.entities.enemy_sprites import (
-    generate_walk_frames, generate_attack_frames, get_fire_frame_index,
+    generate_walk_frames, generate_attack_frames, generate_death_frames,
+    get_fire_frame_index,
     SpriteFrame,
 )
 from storm_the_house.utils.drawing import draw_ellipse_alpha
@@ -44,6 +46,7 @@ class _State(enum.Enum):
 
 _walk_cache: dict[float, list[pygame.Surface]] = {}
 _attack_cache: dict[float, list[pygame.Surface]] = {}
+_die_cache: dict[float, dict[str, list[pygame.Surface]]] = {}
 
 
 def _quantise_scale(s: float) -> float:
@@ -63,6 +66,13 @@ def _get_attack_frames(scale: float) -> list[pygame.Surface]:
     if qs not in _attack_cache:
         _attack_cache[qs] = generate_attack_frames(qs)
     return _attack_cache[qs]
+
+
+def _get_death_frames(scale: float) -> dict[str, list[pygame.Surface]]:
+    qs = _quantise_scale(scale)
+    if qs not in _die_cache:
+        _die_cache[qs] = generate_death_frames(qs)
+    return _die_cache[qs]
 
 
 # ── Enemy class ──────────────────────────────────────────────────────────────
@@ -113,10 +123,15 @@ class Enemy:
         # Animation
         self._walk_frames = _get_walk_frames(self.scale)
         self._attack_frames = _get_attack_frames(self.scale)
+        self._death_frames = _get_death_frames(self.scale)
         self._fire_frame_idx = get_fire_frame_index(len(self._attack_frames))
 
         self._frame_idx = random.randint(0, len(self._walk_frames) - 1)
         self._frame_timer = 0.0
+        self._death_variant = "faceplant"
+        self._death_duration = random.uniform(ENEMY_DEATH_ANIM_MIN, ENEMY_DEATH_ANIM_MAX)
+        self._corpse_timer = 0.0
+        self._corpse_alpha = 255
 
         # Attack cooldown
         self._attack_timer = 0.0
@@ -139,8 +154,10 @@ class Enemy:
     def current_frame(self) -> SpriteFrame:
         if self._state == _State.WALKING:
             return self._walk_frames[self._frame_idx % len(self._walk_frames)]
-        else:
-            return self._attack_frames[self._frame_idx % len(self._attack_frames)]
+        if self._state == _State.DYING:
+            frames = self._death_frames.get(self._death_variant, self._attack_frames)
+            return frames[min(self._frame_idx, len(frames) - 1)]
+        return self._attack_frames[self._frame_idx % len(self._attack_frames)]
 
     # ── hit detection / damage ─────────────────────────────────────────
 
@@ -161,6 +178,12 @@ class Enemy:
             self.hp = 0
             self._state = _State.DYING
             self._death_timer = 0.0
+            self._frame_idx = 0
+            self._frame_timer = 0.0
+            self._death_variant = random.choice(["faceplant", "kneel_fall", "sit_fall", "kneel_back"])
+            self._death_duration = random.uniform(ENEMY_DEATH_ANIM_MIN, ENEMY_DEATH_ANIM_MAX)
+            self._corpse_timer = 0.0
+            self._corpse_alpha = 255
             return True
         return False
 
@@ -233,10 +256,21 @@ class Enemy:
                 self._frame_timer = 0.0
 
     def _update_dying(self, dt: float):
-        """Fade out and mark dead when timer expires."""
+        """Play death animation, linger corpse, then fade out."""
         self._death_timer += dt
-        if self._death_timer >= ENEMY_DEATH_FADE_TIME:
-            self.alive = False
+        if self._death_timer <= self._death_duration:
+            frames = self._death_frames.get(self._death_variant, self._attack_frames)
+            anim_len = len(frames)
+            if anim_len > 1:
+                progress = min(1.0, self._death_timer / self._death_duration)
+                self._frame_idx = min(anim_len - 1, int(progress * (anim_len - 1)))
+        else:
+            self._corpse_timer += dt
+            if self._corpse_timer >= ENEMY_CORPSE_LINGER:
+                fade_t = min(1.0, (self._corpse_timer - ENEMY_CORPSE_LINGER) / ENEMY_DEATH_FADE_TIME)
+                self._corpse_alpha = int(255 * (1 - fade_t))
+                if self._corpse_alpha <= 0:
+                    self.alive = False
 
     # ── draw ──────────────────────────────────────────────────────────────
 
@@ -253,8 +287,10 @@ class Enemy:
 
         # Compute alpha for dying fade-out
         if self._state == _State.DYING:
-            fade = 1.0 - min(1.0, self._death_timer / ENEMY_DEATH_FADE_TIME)
-            alpha = int(255 * fade)
+            if self._death_timer <= self._death_duration:
+                alpha = 255
+            else:
+                alpha = max(0, self._corpse_alpha)
         else:
             alpha = 255
 

@@ -250,6 +250,7 @@ class AssaultRifle(Weapon):
         self._last_shot_timer = 999.0
         self._recoil_offset = (0, 0)
         self._trigger_held = False
+        self._burst_count = 0
 
         self._mag_upgrade = 0
         self._reload_upgrade = 0
@@ -296,20 +297,29 @@ class AssaultRifle(Weapon):
         self._cooldown = ASSAULT_RIFLE_FIRE_RATE
         if not self._trigger_held:
             self._auto_timer = 0.0
+            self._burst_count = 0
         self._auto_timer = min(0.6, self._auto_timer + ASSAULT_RIFLE_FIRE_RATE)
         self._last_shot_timer = 0.0
         self._trigger_held = True
+        self._burst_count += 1
 
         recoil_scale = self.recoil_multiplier
         recoil_x = random.randint(-ASSAULT_RIFLE_RECOIL_JITTER, ASSAULT_RIFLE_RECOIL_JITTER)
         recoil_y = random.randint(-ASSAULT_RIFLE_RECOIL_KICK, -ASSAULT_RIFLE_RECOIL_KICK // 2)
         recoil_x = int(recoil_x * recoil_scale)
         recoil_y = int(recoil_y * recoil_scale)
-        self._recoil_offset = (recoil_x, recoil_y)
 
         spread = self.effective_spread
+        burst_factor = 0.0 if self._burst_count <= 1 else (0.1 * (2 ** (self._burst_count - 2)))
+        burst_factor = min(3.2, burst_factor)
+        spread *= (1.0 + burst_factor)
         spread_x = random.uniform(-spread, spread)
         spread_y = random.uniform(-spread, spread)
+
+        recoil_burst = 1.0 + burst_factor * 0.85
+        recoil_x = int(recoil_x * recoil_burst)
+        recoil_y = int(recoil_y * recoil_burst)
+        self._recoil_offset = (recoil_x, recoil_y)
 
         return FireResult(
             success=True,
@@ -319,6 +329,7 @@ class AssaultRifle(Weapon):
     def release_trigger(self):
         self._trigger_held = False
         self._auto_timer = 0.0
+        self._burst_count = 0
 
     def start_reload(self):
         if self._reloading or self.ammo == self.max_ammo:

@@ -46,6 +46,9 @@ def _draw_soldier_frame(
     arm_offset: float,      # vertical arm bob (px, pre-scale)
     gun_angle: float,       # gun tilt in degrees (0 = horizontal)
     recoil: float,          # 0..1 recoil amount for attack
+    head_offset: tuple[int, int] = (0, 0),
+    torso_offset: tuple[int, int] = (0, 0),
+    tilt: float = 0.0,
 ) -> SpriteFrame:
     """
     Draw one frame of a soldier sprite and return the Surface.
@@ -75,9 +78,20 @@ def _draw_soldier_frame(
     neck_y = shoulder_y - _s(1, scale)
     head_cy = neck_y - head_r
 
+    # Apply torso/head offsets for death poses
+    hip_y += torso_offset[1]
+    shoulder_y += torso_offset[1]
+    neck_y += torso_offset[1] + head_offset[1]
+    head_cy += torso_offset[1] + head_offset[1]
+    cx += torso_offset[0]
+
     # ── LEGS (two legs, with walk cycle) ──────────────────────────────
     leg_spread = math.sin(leg_phase * math.pi * 2) * _s(5, scale)
     leg_back_spread = -leg_spread
+
+    tilt_rad = math.radians(tilt)
+    tilt_dx = int(math.cos(tilt_rad) * _s(3, scale))
+    tilt_dy = int(math.sin(tilt_rad) * _s(3, scale))
 
     # Leg thickness
     lt = max(2, _s(3, scale))
@@ -188,37 +202,40 @@ def _draw_soldier_frame(
     pygame.draw.line(surf, ENEMY_SKIN,
                      (cx, shoulder_y), (cx, neck_y), max(2, _s(2, scale)))
 
+    head_dx = int(math.sin(tilt_rad) * _s(6, scale))
+    head_dy = int(math.cos(tilt_rad) * _s(2, scale))
+
     # Head circle
-    pygame.draw.circle(surf, ENEMY_SKIN, (cx, head_cy), head_r)
+    pygame.draw.circle(surf, ENEMY_SKIN, (cx + head_dx, head_cy + head_dy), head_r)
     # Shadow on right side of face
     pygame.draw.circle(surf, ENEMY_SKIN_SHADOW,
-                       (cx + head_r // 3, head_cy), head_r - 1)
+                       (cx + head_dx + head_r // 3, head_cy + head_dy), head_r - 1)
     # Re-draw left highlight
     pygame.draw.circle(surf, ENEMY_SKIN,
-                       (cx - head_r // 4, head_cy - head_r // 4),
+                       (cx + head_dx - head_r // 4, head_cy + head_dy - head_r // 4),
                        head_r // 2)
 
     # Eye (simple dot)
-    eye_x = cx + head_r // 2
-    eye_y = head_cy - _s(1, scale)
+    eye_x = cx + head_dx + head_r // 2
+    eye_y = head_cy + head_dy - _s(1, scale)
     pygame.draw.circle(surf, (30, 30, 30), (eye_x, eye_y), max(1, _s(1, scale)))
 
     # ── HELMET ────────────────────────────────────────────────────────
     helmet_w = head_r * 2 + _s(3, scale)
-    helmet_top = head_cy - head_r - _s(1, scale)
+    helmet_top = head_cy + head_dy - head_r - _s(1, scale)
     # Main dome
     pygame.draw.ellipse(surf, ENEMY_HELMET,
-                        pygame.Rect(cx - helmet_w // 2, helmet_top,
+                        pygame.Rect(cx + head_dx - helmet_w // 2, helmet_top,
                                     helmet_w, head_r + helmet_h))
     # Brim
-    brim_y = head_cy - head_r // 2
+    brim_y = head_cy + head_dy - head_r // 2
     pygame.draw.line(surf, ENEMY_HELMET,
-                     (cx - helmet_w // 2 - _s(1, scale), brim_y),
-                     (cx + helmet_w // 2 + _s(2, scale), brim_y),
+                     (cx + head_dx - helmet_w // 2 - _s(1, scale), brim_y),
+                     (cx + head_dx + helmet_w // 2 + _s(2, scale), brim_y),
                      max(2, _s(2, scale)))
     # Helmet shadow
     pygame.draw.ellipse(surf, ENEMY_HELMET_SHADOW,
-                        pygame.Rect(cx - helmet_w // 2 + 2,
+                        pygame.Rect(cx + head_dx - helmet_w // 2 + 2,
                                     helmet_top + helmet_h // 2,
                                     helmet_w - 2, head_r))
 
@@ -280,6 +297,68 @@ def generate_attack_frames(scale: float, num_frames: int = 6) -> list[SpriteFram
             recoil=recoil,
         ))
     return frames
+
+
+def generate_death_frames(scale: float) -> dict[str, list[SpriteFrame]]:
+    """Generate multiple death animation variations."""
+    variants: dict[str, list[SpriteFrame]] = {}
+    frames = []
+    for t in [0.0, 0.35, 0.7, 1.0]:
+        frames.append(_draw_soldier_frame(
+            scale=scale,
+            leg_phase=0.25 + t * 0.45,
+            arm_offset=3 + t * 7,
+            gun_angle=-12 - t * 25,
+            recoil=0.7 + t * 0.7,
+            head_offset=(0, int(6 * t * scale)),
+            torso_offset=(0, int(8 * t * scale)),
+            tilt=-18 * t,
+        ))
+    variants["faceplant"] = frames
+
+    frames = []
+    for t in [0.0, 0.35, 0.7, 1.0]:
+        frames.append(_draw_soldier_frame(
+            scale=scale,
+            leg_phase=0.05 + t * 0.3,
+            arm_offset=4 + t * 5,
+            gun_angle=-5 - t * 16,
+            recoil=0.5 + t * 0.6,
+            head_offset=(0, int(3 * t * scale)),
+            torso_offset=(0, int(6 * t * scale)),
+            tilt=-10 * t,
+        ))
+    variants["kneel_fall"] = frames
+
+    frames = []
+    for t in [0.0, 0.3, 0.65, 1.0]:
+        frames.append(_draw_soldier_frame(
+            scale=scale,
+            leg_phase=-0.25 + t * 0.5,
+            arm_offset=5 + t * 2,
+            gun_angle=-3 - t * 10,
+            recoil=0.6 + t * 0.7,
+            head_offset=(0, int(2 * t * scale)),
+            torso_offset=(0, int(5 * t * scale)),
+            tilt=12 * t,
+        ))
+    variants["sit_fall"] = frames
+
+    frames = []
+    for t in [0.0, 0.4, 0.75, 1.0]:
+        frames.append(_draw_soldier_frame(
+            scale=scale,
+            leg_phase=0.05 + t * 0.4,
+            arm_offset=4 + t * 6,
+            gun_angle=-6 - t * 24,
+            recoil=0.6 + t * 0.7,
+            head_offset=(0, int(4 * t * scale)),
+            torso_offset=(0, int(7 * t * scale)),
+            tilt=-14 * t,
+        ))
+    variants["kneel_back"] = frames
+
+    return variants
 
 
 def get_fire_frame_index(num_frames: int = 6) -> int:

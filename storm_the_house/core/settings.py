@@ -150,7 +150,10 @@ SHOTGUN_SHELL_PRIMER = (120, 100, 50)
 
 # ── Enemy HP ────────────────────────────────────────────────────────────────
 ENEMY_HP = 3
-ENEMY_DEATH_FADE_TIME = 0.4         # seconds to fade out on death
+ENEMY_DEATH_FADE_TIME = 1.4         # seconds to fade out on death
+ENEMY_DEATH_ANIM_MIN = 1.0          # seconds per death animation
+ENEMY_DEATH_ANIM_MAX = 2.0
+ENEMY_CORPSE_LINGER = 2.2           # seconds to remain before fade
 
 # ── Crosshair ──────────────────────────────────────────────────────────────
 CROSSHAIR_SIZE = 20                 # outer radius in px
@@ -321,6 +324,17 @@ BLOOD_COLORS = [
     (200, 40, 40),
     (140, 15, 15),
     (190, 50, 50),
+]
+
+# Blood puddles
+BLOOD_PUDDLE_LIFETIME_MIN = 2.5
+BLOOD_PUDDLE_LIFETIME_MAX = 4.0
+BLOOD_PUDDLE_SIZE_MIN = 6
+BLOOD_PUDDLE_SIZE_MAX = 12
+BLOOD_PUDDLE_COLORS = [
+    (110, 25, 25),
+    (120, 30, 30),
+    (90, 20, 20),
 ]
 
 # ── Dust particles (ground miss) ───────────────────────────────────────────
