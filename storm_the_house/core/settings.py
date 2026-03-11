@@ -327,15 +327,16 @@ BLOOD_COLORS = [
 ]
 
 # Blood puddles
-BLOOD_PUDDLE_LIFETIME_MIN = 2.5
-BLOOD_PUDDLE_LIFETIME_MAX = 4.0
-BLOOD_PUDDLE_SIZE_MIN = 6
-BLOOD_PUDDLE_SIZE_MAX = 12
+BLOOD_PUDDLE_LIFETIME_MIN = 3.0
+BLOOD_PUDDLE_LIFETIME_MAX = 5.0
+BLOOD_PUDDLE_SIZE_MIN = 3
+BLOOD_PUDDLE_SIZE_MAX = 6
 BLOOD_PUDDLE_COLORS = [
-    (110, 25, 25),
-    (120, 30, 30),
     (90, 20, 20),
+    (100, 25, 25),
+    (80, 18, 18),
 ]
+BLOOD_PUDDLE_ALPHA = 80
 
 # ── Dust particles (ground miss) ───────────────────────────────────────────
 DUST_COUNT_MIN = 6

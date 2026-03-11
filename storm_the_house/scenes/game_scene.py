@@ -428,6 +428,9 @@ class GameScene:
         # 3. Background decorations (dunes, fence)
         self.background.draw(surface, time_ms)
 
+        # 3b. Blood puddles (behind everything)
+        self.particles.draw_puddles(surface)
+
         # 4. Enemies and armored cars (sorted by depth internally)
         self.enemy_manager.draw(surface, time_ms)
 

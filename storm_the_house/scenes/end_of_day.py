@@ -598,8 +598,8 @@ class EndOfDayScene:
         ]
 
         for i, (weapon_type, name, owned) in enumerate(weapons):
-            btn_y = panel_y + i * (btn_h + gap)
-            btn_rect = pygame.Rect(panel_x, btn_y, panel_w, btn_h)
+            btn_y = panel_y + 52 + i * (btn_h + gap)
+            btn_rect = pygame.Rect(panel_x + 14, btn_y, panel_w - 28, btn_h)
 
             if btn_rect.collidepoint(mx, my):
                 if owned:

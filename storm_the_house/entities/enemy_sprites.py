@@ -300,61 +300,85 @@ def generate_attack_frames(scale: float, num_frames: int = 6) -> list[SpriteFram
 
 
 def generate_death_frames(scale: float) -> dict[str, list[SpriteFrame]]:
-    """Generate multiple death animation variations."""
+    """Generate multiple death animation variations, all ending flat on ground."""
     variants: dict[str, list[SpriteFrame]] = {}
+
+    # Faceplant: falls forward, ends flat face-down
     frames = []
-    for t in [0.0, 0.35, 0.7, 1.0]:
+    for t in [0.0, 0.25, 0.5, 0.75, 1.0]:
         frames.append(_draw_soldier_frame(
             scale=scale,
-            leg_phase=0.25 + t * 0.45,
-            arm_offset=3 + t * 7,
-            gun_angle=-12 - t * 25,
-            recoil=0.7 + t * 0.7,
-            head_offset=(0, int(6 * t * scale)),
-            torso_offset=(0, int(8 * t * scale)),
-            tilt=-18 * t,
+            leg_phase=0.2 + t * 0.5,
+            arm_offset=2 + t * 10,
+            gun_angle=-10 - t * 30,
+            recoil=0.5 + t * 0.8,
+            head_offset=(int(3 * t * scale), int(12 * t * scale)),
+            torso_offset=(0, int(14 * t * scale)),
+            tilt=-70 * t,  # ends nearly horizontal
         ))
     variants["faceplant"] = frames
 
+    # Kneel then fall forward: kneels first, then topples face-down
     frames = []
-    for t in [0.0, 0.35, 0.7, 1.0]:
+    for t in [0.0, 0.3, 0.55, 0.8, 1.0]:
+        # First part: kneel (small drop), second part: fall forward
+        if t < 0.4:
+            kneel_t = t / 0.4
+            fall_t = 0.0
+        else:
+            kneel_t = 1.0
+            fall_t = (t - 0.4) / 0.6
         frames.append(_draw_soldier_frame(
             scale=scale,
-            leg_phase=0.05 + t * 0.3,
-            arm_offset=4 + t * 5,
-            gun_angle=-5 - t * 16,
-            recoil=0.5 + t * 0.6,
-            head_offset=(0, int(3 * t * scale)),
-            torso_offset=(0, int(6 * t * scale)),
-            tilt=-10 * t,
+            leg_phase=0.05 + kneel_t * 0.2,
+            arm_offset=3 + fall_t * 8,
+            gun_angle=-5 - fall_t * 25,
+            recoil=0.4 + fall_t * 0.7,
+            head_offset=(int(2 * fall_t * scale), int(4 * kneel_t * scale + 10 * fall_t * scale)),
+            torso_offset=(0, int(5 * kneel_t * scale + 12 * fall_t * scale)),
+            tilt=-55 * fall_t,
         ))
     variants["kneel_fall"] = frames
 
+    # Sit fall: falls backward onto butt, then lies flat on back
     frames = []
-    for t in [0.0, 0.3, 0.65, 1.0]:
+    for t in [0.0, 0.3, 0.55, 0.8, 1.0]:
+        if t < 0.35:
+            sit_t = t / 0.35
+            lie_t = 0.0
+        else:
+            sit_t = 1.0
+            lie_t = (t - 0.35) / 0.65
         frames.append(_draw_soldier_frame(
             scale=scale,
-            leg_phase=-0.25 + t * 0.5,
-            arm_offset=5 + t * 2,
-            gun_angle=-3 - t * 10,
-            recoil=0.6 + t * 0.7,
-            head_offset=(0, int(2 * t * scale)),
-            torso_offset=(0, int(5 * t * scale)),
-            tilt=12 * t,
+            leg_phase=-0.2 + sit_t * 0.3,
+            arm_offset=4 + lie_t * 6,
+            gun_angle=-3 - lie_t * 15,
+            recoil=0.5 + lie_t * 0.6,
+            head_offset=(int(-2 * lie_t * scale), int(3 * sit_t * scale + 10 * lie_t * scale)),
+            torso_offset=(0, int(4 * sit_t * scale + 12 * lie_t * scale)),
+            tilt=60 * lie_t,  # falls backward (positive tilt)
         ))
     variants["sit_fall"] = frames
 
+    # Kneel back: kneels then falls backward onto back
     frames = []
-    for t in [0.0, 0.4, 0.75, 1.0]:
+    for t in [0.0, 0.35, 0.6, 0.85, 1.0]:
+        if t < 0.4:
+            kneel_t = t / 0.4
+            fall_t = 0.0
+        else:
+            kneel_t = 1.0
+            fall_t = (t - 0.4) / 0.6
         frames.append(_draw_soldier_frame(
             scale=scale,
-            leg_phase=0.05 + t * 0.4,
-            arm_offset=4 + t * 6,
-            gun_angle=-6 - t * 24,
-            recoil=0.6 + t * 0.7,
-            head_offset=(0, int(4 * t * scale)),
-            torso_offset=(0, int(7 * t * scale)),
-            tilt=-14 * t,
+            leg_phase=0.05 + kneel_t * 0.25,
+            arm_offset=3 + fall_t * 7,
+            gun_angle=-6 - fall_t * 20,
+            recoil=0.5 + fall_t * 0.6,
+            head_offset=(int(-3 * fall_t * scale), int(4 * kneel_t * scale + 11 * fall_t * scale)),
+            torso_offset=(0, int(6 * kneel_t * scale + 13 * fall_t * scale)),
+            tilt=55 * fall_t,  # falls backward
         ))
     variants["kneel_back"] = frames
 

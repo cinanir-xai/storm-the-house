@@ -30,6 +30,7 @@ from storm_the_house.core.settings import (
     DEBRIS_GRAVITY, DEBRIS_COLORS,
     BLOOD_PUDDLE_LIFETIME_MIN, BLOOD_PUDDLE_LIFETIME_MAX,
     BLOOD_PUDDLE_SIZE_MIN, BLOOD_PUDDLE_SIZE_MAX, BLOOD_PUDDLE_COLORS,
+    BLOOD_PUDDLE_ALPHA,
 )
 
 
@@ -75,7 +76,7 @@ class _Particle:
 class _BloodPuddle:
     """Static blood puddle decal that fades out."""
 
-    __slots__ = ("x", "y", "size", "lifetime", "max_lifetime", "color")
+    __slots__ = ("x", "y", "size", "lifetime", "max_lifetime", "color", "blobs")
 
     def __init__(self, x: float, y: float, size: float, lifetime: float, color: tuple):
         self.x = x
@@ -84,6 +85,14 @@ class _BloodPuddle:
         self.lifetime = lifetime
         self.max_lifetime = lifetime
         self.color = color
+        # Generate random blob positions for splatter effect
+        self.blobs: list[tuple[float, float, float]] = []
+        num_blobs = random.randint(3, 6)
+        for _ in range(num_blobs):
+            bx = random.uniform(-size * 1.2, size * 1.2)
+            by = random.uniform(-size * 0.5, size * 0.5)
+            br = random.uniform(size * 0.25, size * 0.6)
+            self.blobs.append((bx, by, br))
 
     @property
     def alive(self) -> bool:
@@ -92,7 +101,7 @@ class _BloodPuddle:
     @property
     def alpha(self) -> int:
         t = max(0.0, self.lifetime / self.max_lifetime)
-        return int(200 * t)
+        return int(BLOOD_PUDDLE_ALPHA * t)
 
     def update(self, dt: float):
         self.lifetime -= dt
@@ -122,12 +131,13 @@ class ParticleManager:
                 _Particle(x, y, vx, vy, BLOOD_GRAVITY, lifetime, color, size, drag=0.97)
             )
 
-        # Add a lingering puddle near the ground
+        # Add a lingering puddle near the ground (offset to side)
         puddle_lifetime = random.uniform(BLOOD_PUDDLE_LIFETIME_MIN, BLOOD_PUDDLE_LIFETIME_MAX)
         puddle_size = random.uniform(BLOOD_PUDDLE_SIZE_MIN, BLOOD_PUDDLE_SIZE_MAX)
         puddle_color = random.choice(BLOOD_PUDDLE_COLORS)
+        offset_x = random.choice([-1, 1]) * random.uniform(8, 16)
         self._puddles.append(
-            _BloodPuddle(x + random.uniform(-4, 4), y + random.uniform(2, 6), puddle_size, puddle_lifetime, puddle_color)
+            _BloodPuddle(x + offset_x, y + random.uniform(4, 10), puddle_size, puddle_lifetime, puddle_color)
         )
 
     def emit_dust(self, x: float, y: float):
@@ -206,16 +216,6 @@ class ParticleManager:
 
     def draw(self, surface: pygame.Surface):
         """Draw all living particles with alpha fade."""
-        for puddle in self._puddles:
-            alpha = puddle.alpha
-            if alpha <= 0:
-                continue
-            w = max(2, int(puddle.size * 1.6))
-            h = max(2, int(puddle.size))
-            tmp = pygame.Surface((w * 2, h * 2), pygame.SRCALPHA)
-            pygame.draw.ellipse(tmp, (*puddle.color, alpha), tmp.get_rect())
-            surface.blit(tmp, (int(puddle.x) - w, int(puddle.y) - h))
-
         for p in self._particles:
             alpha = p.alpha
             if alpha <= 0:
@@ -226,6 +226,20 @@ class ParticleManager:
             tmp = pygame.Surface((d, d), pygame.SRCALPHA)
             pygame.draw.circle(tmp, (*p.color, alpha), (d // 2, d // 2), r)
             surface.blit(tmp, (int(p.x) - d // 2, int(p.y) - d // 2))
+
+    def draw_puddles(self, surface: pygame.Surface):
+        """Draw blood puddles behind everything else."""
+        for puddle in self._puddles:
+            alpha = puddle.alpha
+            if alpha <= 0:
+                continue
+            # Draw each blob in the splatter
+            for bx, by, br in puddle.blobs:
+                r = max(1, int(br))
+                d = r * 2 + 2
+                tmp = pygame.Surface((d, d), pygame.SRCALPHA)
+                pygame.draw.circle(tmp, (*puddle.color, alpha), (d // 2, d // 2), r)
+                surface.blit(tmp, (int(puddle.x + bx) - d // 2, int(puddle.y + by) - d // 2))
 
     @property
     def count(self) -> int:
