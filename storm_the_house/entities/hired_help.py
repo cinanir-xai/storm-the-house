@@ -15,6 +15,7 @@ from storm_the_house.core.settings import (
     REPAIRMAN_MAX_VISIBLE, REPAIRMAN_UNIQUE_SPOTS,
     GUNMAN_MAX_VISIBLE, GUNMAN_UNIQUE_SPOTS,
     MONEY_PER_KILL,
+    ARMORED_CAR_MONEY_REWARD,
 )
 from storm_the_house.entities.upgrades import UpgradeState
 
@@ -69,7 +70,8 @@ class HiredHelp:
 
     # ── update ────────────────────────────────────────────────────────
 
-    def update(self, dt: float, house, enemies: list, money_ref: list[int]):
+    def update(self, dt: float, house, enemies: list, money_ref: list[int],
+               armored_cars: list = None):
         """Tick repair and gunman timers.
 
         Parameters
@@ -80,6 +82,8 @@ class HiredHelp:
             Active enemy list (for gunman targeting).
         money_ref : list[int]
             Single-element list ``[money]`` so we can mutate the caller's money.
+        armored_cars : list[ArmoredCar] | None
+            Active armored car list (for gunman targeting).
         """
         self._anim_timer += dt
 
@@ -92,25 +96,39 @@ class HiredHelp:
                 house.hp = min(house.max_hp, house.hp + heal_amount)
 
         # ── gunman auto-shooting ───────────────────────────────────────
-        if self._upgrades.gunman_count > 0 and enemies:
+        if self._upgrades.gunman_count > 0 and (enemies or (armored_cars and any(c.alive for c in armored_cars))):
             fire_interval = self._upgrades.gunman_fire_interval
             self._gunman_timer += dt
             if self._gunman_timer >= fire_interval:
                 self._gunman_timer -= fire_interval
-                self._gunman_shoot(house, enemies, money_ref)
+                self._gunman_shoot(house, enemies, money_ref, armored_cars)
 
         # Flash timer
         if self._gunman_flash_timer > 0:
             self._gunman_flash_timer -= dt
 
-    def _gunman_shoot(self, house, enemies: list, money_ref: list[int]):
-        """Find the closest alive enemy and instantly kill it."""
-        # Find closest living enemy to the house
+    def _gunman_shoot(self, house, enemies: list, money_ref: list[int],
+                      armored_cars: list = None):
+        """Find the closest alive enemy or armored car and damage it."""
         house_cx = house.x + house.width // 2
         house_cy = house.y + house.height // 2
 
         closest = None
         closest_dist = float("inf")
+        is_armored_car = False
+
+        # Check armored cars first (they're higher priority targets)
+        if armored_cars:
+            for car in armored_cars:
+                if not car.alive or car.state == "exploding":
+                    continue
+                dist = abs(car.x - house_cx)
+                if dist < closest_dist:
+                    closest_dist = dist
+                    closest = car
+                    is_armored_car = True
+
+        # Then check regular enemies
         for e in enemies:
             if not e.alive or e.state == "dying":
                 continue
@@ -118,15 +136,20 @@ class HiredHelp:
             if dist < closest_dist:
                 closest_dist = dist
                 closest = e
+                is_armored_car = False
 
         if closest is None:
             return
 
-        # Instantly kill the enemy
-        closest.take_damage(closest.hp)
-        money_ref[0] += MONEY_PER_KILL
+        # Deal damage
+        killed = closest.take_damage(closest.hp)
+        if is_armored_car:
+            if killed:
+                money_ref[0] += ARMORED_CAR_MONEY_REWARD
+        else:
+            money_ref[0] += MONEY_PER_KILL
 
-        # Set muzzle flash at the enemy's position
+        # Set muzzle flash at the target's position
         rect = closest.get_hit_rect()
         self._gunman_flash_pos = (rect.centerx, rect.centery)
         self._gunman_flash_timer = 0.15

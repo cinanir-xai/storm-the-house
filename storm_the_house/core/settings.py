@@ -285,3 +285,67 @@ DUST_COLORS = [
     (215, 195, 155),
     (175, 155, 120),
 ]
+
+# ── Explosion particles ───────────────────────────────────────────────────
+EXPLOSION_COUNT_MIN = 25
+EXPLOSION_COUNT_MAX = 40
+EXPLOSION_SPEED_MIN = 80
+EXPLOSION_SPEED_MAX = 250
+EXPLOSION_LIFETIME_MIN = 0.5
+EXPLOSION_LIFETIME_MAX = 1.2
+EXPLOSION_GRAVITY = 150
+EXPLOSION_COLORS = [
+    (255, 200, 50),
+    (255, 150, 30),
+    (255, 100, 20),
+    (255, 80, 10),
+    (200, 80, 30),
+    (150, 60, 20),
+]
+
+# ── Debris particles ───────────────────────────────────────────────────────
+DEBRIS_COUNT_MIN = 12
+DEBRIS_COUNT_MAX = 20
+DEBRIS_SPEED_MIN = 60
+DEBRIS_SPEED_MAX = 180
+DEBRIS_LIFETIME_MIN = 0.6
+DEBRIS_LIFETIME_MAX = 1.5
+DEBRIS_GRAVITY = 300
+DEBRIS_COLORS = [
+    (80, 80, 85),
+    (60, 60, 65),
+    (100, 100, 105),
+    (70, 70, 75),
+    (50, 50, 55),
+]
+
+# ── Armored Car (boss enemy) ──────────────────────────────────────────────
+ARMORED_CAR_HP = 20
+ARMORED_CAR_SPEED = 120              # px/s when driving to position
+ARMORED_CAR_ATTACK_COOLDOWN = 0.4    # 3x faster than grunt (1.2 / 3)
+ARMORED_CAR_STOP_X_RATIO = 0.45     # Stop at 45% of screen width (middle)
+ARMORED_CAR_MONEY_REWARD = 100      # Money for destroying an armored car
+
+# Armored car colors
+ARMORED_CAR_BODY = (70, 75, 80)           # dark grey steel
+ARMORED_CAR_BODY_DARK = (50, 55, 60)      # shadow side
+ARMORED_CAR_BODY_LIGHT = (90, 95, 100)    # highlight
+ARMORED_CAR_WHEEL = (35, 35, 38)
+ARMORED_CAR_WHEEL_RIM = (60, 60, 65)
+ARMORED_CAR_WINDOW = (40, 50, 60)         # dark tinted glass
+ARMORED_CAR_WINDOW_SHINE = (70, 85, 100)
+ARMORED_CAR_GUN_MOUNT = (55, 58, 62)
+ARMORED_CAR_GUN_BARREL = (45, 48, 52)
+ARMORED_CAR_HEADLIGHT = (220, 220, 180)
+ARMORED_CAR_TAILLIGHT = (180, 50, 40)
+
+# Driver/gunner colors (same palette as enemies but different arrangement)
+ARMORED_CAR_DRIVER_SKIN = (200, 160, 120)
+ARMORED_CAR_DRIVER_HELMET = (85, 95, 80)
+ARMORED_CAR_GUNNER_SKIN = (200, 160, 120)
+ARMORED_CAR_GUNNER_UNIFORM = (75, 85, 70)
+
+# Explosion settings
+EXPLOSION_FLASH_DURATION = 0.15
+EXPLOSION_SHAKE_DURATION = 0.3
+EXPLOSION_SHAKE_INTENSITY = 8

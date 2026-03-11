@@ -15,6 +15,7 @@ from storm_the_house.core.settings import (
     ENEMY_SHOT_DAMAGE, MONEY_PER_KILL,
     DAY_DURATION, DAY_END_BONUS, HUD_DAY_COLOR,
     DEBUG_MONEY_ADD, TIME_SCALE_MIN, TIME_SCALE_MAX, TIME_SCALE_STEP,
+    ARMORED_CAR_MONEY_REWARD,
 )
 from storm_the_house.rendering.sky import SkyRenderer
 from storm_the_house.rendering.ground import GroundRenderer
@@ -156,6 +157,28 @@ class GameScene:
         if not self.weapon.try_fire():
             return
 
+        # Check armored cars first (they're bigger targets)
+        for car in self.enemy_manager.armored_cars:
+            if not car.alive:
+                continue
+            rect = car.get_hit_rect()
+            if rect.collidepoint(mx, my):
+                destroyed = car.take_damage(self.weapon.damage)
+                bx = max(rect.left, min(mx, rect.right))
+                by = max(rect.top, min(my, rect.bottom))
+                self.particles.emit_blood(bx, by)
+                if destroyed:
+                    self.money += ARMORED_CAR_MONEY_REWARD
+                    self.kills += 1
+                    # Emit explosion and debris
+                    cx = rect.centerx
+                    cy = rect.centery
+                    self.particles.emit_explosion(cx, cy, scale=car.scale)
+                    self.particles.emit_debris(cx, cy, scale=car.scale)
+                    self.particles.emit_smoke(cx, cy - 20, count=10)
+                return  # Hit an armored car, stop checking
+
+        # Then check regular enemies (sorted by depth for proper hit priority)
         enemies_sorted = sorted(
             self.enemy_manager.enemies,
             key=lambda e: e.foot_y,
@@ -185,8 +208,14 @@ class GameScene:
         self.weapon.start_reload()
 
     def _process_enemy_shots(self):
+        # Regular enemy shots
         for enemy in self.enemy_manager.enemies:
             if enemy.fired_this_frame:
+                self.house.take_damage(ENEMY_SHOT_DAMAGE)
+
+        # Armored car shots (same damage, 3x faster rate)
+        for car in self.enemy_manager.armored_cars:
+            if car.fired_this_frame:
                 self.house.take_damage(ENEMY_SHOT_DAMAGE)
 
     # ── tick / draw ──────────────────────────────────────────────────────
@@ -231,7 +260,8 @@ class GameScene:
         # Hired help (repair + gunman auto-shoot)
         money_ref = [self.money]
         self.hired_help.update(dt, self.house,
-                               self.enemy_manager.enemies, money_ref)
+                               self.enemy_manager.enemies, money_ref,
+                               self.enemy_manager.armored_cars)
         # Check if gunman earned money
         earned = money_ref[0] - self.money
         if earned > 0:
@@ -270,7 +300,7 @@ class GameScene:
         # 3. Background decorations (dunes, fence)
         self.background.draw(surface, time_ms)
 
-        # 4. Enemies (sorted by depth internally)
+        # 4. Enemies and armored cars (sorted by depth internally)
         self.enemy_manager.draw(surface, time_ms)
 
         # 5. House
@@ -281,6 +311,9 @@ class GameScene:
 
         # 6. Particles
         self.particles.draw(surface)
+
+        # 6b. Armored car effects (muzzle flashes, health bars)
+        self.enemy_manager.draw_armored_car_effects(surface)
 
         # 7. Vignette overlay
         surface.blit(self._vignette, (0, 0))

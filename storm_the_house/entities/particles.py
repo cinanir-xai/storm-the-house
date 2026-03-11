@@ -20,6 +20,14 @@ from storm_the_house.core.settings import (
     DUST_SPEED_MIN, DUST_SPEED_MAX,
     DUST_LIFETIME_MIN, DUST_LIFETIME_MAX,
     DUST_GRAVITY, DUST_COLORS,
+    EXPLOSION_COUNT_MIN, EXPLOSION_COUNT_MAX,
+    EXPLOSION_SPEED_MIN, EXPLOSION_SPEED_MAX,
+    EXPLOSION_LIFETIME_MIN, EXPLOSION_LIFETIME_MAX,
+    EXPLOSION_GRAVITY, EXPLOSION_COLORS,
+    DEBRIS_COUNT_MIN, DEBRIS_COUNT_MAX,
+    DEBRIS_SPEED_MIN, DEBRIS_SPEED_MAX,
+    DEBRIS_LIFETIME_MIN, DEBRIS_LIFETIME_MAX,
+    DEBRIS_GRAVITY, DEBRIS_COLORS,
 )
 
 
@@ -98,6 +106,54 @@ class ParticleManager:
             size = random.uniform(2.0, 5.0)
             self._particles.append(
                 _Particle(x, y, vx, vy, DUST_GRAVITY, lifetime, color, size, drag=0.95)
+            )
+
+    def emit_explosion(self, x: float, y: float, scale: float = 1.0):
+        """Spawn an explosion burst at (x, y) – for armored car destruction."""
+        # Fire/explosion particles
+        count = random.randint(EXPLOSION_COUNT_MIN, EXPLOSION_COUNT_MAX)
+        for _ in range(count):
+            angle = random.uniform(0, math.pi * 2)  # all directions
+            speed = random.uniform(EXPLOSION_SPEED_MIN, EXPLOSION_SPEED_MAX) * scale
+            vx = math.cos(angle) * speed
+            vy = math.sin(angle) * speed - random.uniform(30, 80)  # bias upward
+            lifetime = random.uniform(EXPLOSION_LIFETIME_MIN, EXPLOSION_LIFETIME_MAX)
+            color = random.choice(EXPLOSION_COLORS)
+            size = random.uniform(3.0, 8.0) * scale
+            self._particles.append(
+                _Particle(x, y, vx, vy, EXPLOSION_GRAVITY, lifetime, color, size, drag=0.96)
+            )
+
+    def emit_debris(self, x: float, y: float, scale: float = 1.0):
+        """Spawn debris particles at (x, y) – metal/vehicle fragments."""
+        count = random.randint(DEBRIS_COUNT_MIN, DEBRIS_COUNT_MAX)
+        for _ in range(count):
+            angle = random.uniform(-math.pi * 0.8, math.pi * 0.2)  # mostly up and outward
+            speed = random.uniform(DEBRIS_SPEED_MIN, DEBRIS_SPEED_MAX) * scale
+            vx = math.cos(angle) * speed * random.choice([-1, 1])
+            vy = -abs(math.sin(angle) * speed) - random.uniform(20, 60)  # upward
+            lifetime = random.uniform(DEBRIS_LIFETIME_MIN, DEBRIS_LIFETIME_MAX)
+            color = random.choice(DEBRIS_COLORS)
+            size = random.uniform(2.0, 5.0) * scale
+            self._particles.append(
+                _Particle(x, y, vx, vy, DEBRIS_GRAVITY, lifetime, color, size, drag=0.98)
+            )
+
+    def emit_smoke(self, x: float, y: float, count: int = 8):
+        """Spawn smoke particles at (x, y) – rising dark smoke."""
+        for _ in range(count):
+            angle = random.uniform(-math.pi * 0.3, math.pi * 0.3)  # mostly upward
+            speed = random.uniform(20, 50)
+            vx = math.cos(angle) * speed * random.choice([-1, 1])
+            vy = -abs(math.sin(angle) * speed) - random.uniform(10, 30)
+            lifetime = random.uniform(0.8, 1.5)
+            # Dark grey to black smoke
+            grey = random.randint(40, 80)
+            color = (grey, grey, grey)
+            size = random.uniform(6.0, 12.0)
+            # Smoke rises and expands
+            self._particles.append(
+                _Particle(x, y, vx, vy, -30, lifetime, color, size, drag=0.99)  # negative gravity = rises
             )
 
     # ── update / draw ───────────────────────────────────────────────────
