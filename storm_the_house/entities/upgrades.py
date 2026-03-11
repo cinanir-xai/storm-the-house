@@ -1,10 +1,15 @@
 """
 Upgrade state – tracks the level and escalating price of each upgrade.
 
-Weapon upgrades (infinitely stackable per weapon):
+Pistol upgrades (infinitely stackable):
   - **Damage**  : +1 damage per level
   - **Ammo**    : +1 max ammo per level
   - **Reload**  : 15 % faster reload per level (multiplicative)
+
+Shotgun upgrades (infinitely stackable):
+  - **Longer Barrel** : +1 ammo capacity per level
+  - **Buckshot**      : +2 pellets per shot per level
+  - **Faster Handling**: 20% faster reload and pump per level
 
 Weapon purchases:
   - **Shotgun** : $500 to unlock
@@ -32,11 +37,13 @@ from storm_the_house.core.settings import (
     REPAIRMAN_COST, GUNMAN_COST,
     GUNMAN_BASE_INTERVAL, GUNMAN_SPEED_FACTOR,
     SHOTGUN_COST, ASSAULT_RIFLE_COST,
+    SHOTGUN_UPGRADE_AMMO_BONUS, SHOTGUN_UPGRADE_PELLET_BONUS, SHOTGUN_UPGRADE_SPEED_BONUS,
+    SHOTGUN_MAX_AMMO, SHOTGUN_PELLET_COUNT, SHOTGUN_SHELL_RELOAD_TIME,
 )
 
 
 class WeaponUpgradeState:
-    """Upgrade state for a single weapon."""
+    """Upgrade state for a single weapon (pistol-style upgrades)."""
 
     def __init__(self):
         self.damage_level: int = 0
@@ -101,6 +108,83 @@ class WeaponUpgradeState:
         return money - cost
 
 
+class ShotgunUpgradeState:
+    """Upgrade state for shotgun with unique upgrades."""
+
+    def __init__(self):
+        # Longer Barrel: +1 ammo capacity
+        self.ammo_level: int = 0
+        # Buckshot: +2 pellets per shot
+        self.pellet_level: int = 0
+        # Faster Handling: 20% faster reload and pump
+        self.speed_level: int = 0
+
+    @staticmethod
+    def _price_for_level(level: int) -> int:
+        return int(UPGRADE_BASE_COST * (UPGRADE_PRICE_MULTIPLIER ** level))
+
+    @property
+    def ammo_price(self) -> int:
+        """Price for Longer Barrel upgrade."""
+        return self._price_for_level(self.ammo_level)
+
+    @property
+    def pellet_price(self) -> int:
+        """Price for Buckshot upgrade."""
+        return self._price_for_level(self.pellet_level)
+
+    @property
+    def speed_price(self) -> int:
+        """Price for Faster Handling upgrade."""
+        return self._price_for_level(self.speed_level)
+
+    @property
+    def bonus_ammo(self) -> int:
+        return self.ammo_level * SHOTGUN_UPGRADE_AMMO_BONUS
+
+    @property
+    def bonus_pellets(self) -> int:
+        return self.pellet_level * SHOTGUN_UPGRADE_PELLET_BONUS
+
+    @property
+    def speed_multiplier(self) -> float:
+        """Returns the multiplier for reload/pump speed (lower = faster)."""
+        return (1 - SHOTGUN_UPGRADE_SPEED_BONUS) ** self.speed_level
+
+    def can_buy_ammo(self, money: int) -> bool:
+        return money >= self.ammo_price
+
+    def can_buy_pellet(self, money: int) -> bool:
+        return money >= self.pellet_price
+
+    def can_buy_speed(self, money: int) -> bool:
+        return money >= self.speed_price
+
+    def buy_ammo(self, money: int) -> int:
+        """Buy Longer Barrel upgrade."""
+        cost = self.ammo_price
+        if money < cost:
+            return money
+        self.ammo_level += 1
+        return money - cost
+
+    def buy_pellet(self, money: int) -> int:
+        """Buy Buckshot upgrade."""
+        cost = self.pellet_price
+        if money < cost:
+            return money
+        self.pellet_level += 1
+        return money - cost
+
+    def buy_speed(self, money: int) -> int:
+        """Buy Faster Handling upgrade."""
+        cost = self.speed_price
+        if money < cost:
+            return money
+        self.speed_level += 1
+        return money - cost
+
+
 class UpgradeState:
     """Persistent upgrade tracker that lives across days."""
 
@@ -111,7 +195,7 @@ class UpgradeState:
 
         # Per-weapon upgrade states
         self.pistol_upgrades = WeaponUpgradeState()
-        self.shotgun_upgrades = WeaponUpgradeState()
+        self.shotgun_upgrades = ShotgunUpgradeState()  # Special shotgun upgrades
         self.assault_rifle_upgrades = WeaponUpgradeState()
 
         # Currently selected weapon for upgrades display
@@ -125,7 +209,8 @@ class UpgradeState:
         self.repairman_count: int = 0
         self.gunman_count: int = 0
 
-    def get_weapon_upgrades(self, weapon_type: str) -> WeaponUpgradeState:
+    def get_weapon_upgrades(self, weapon_type: str):
+        """Get the upgrade state for a weapon type."""
         if weapon_type == "shotgun":
             return self.shotgun_upgrades
         elif weapon_type == "assault_rifle":
@@ -346,14 +431,13 @@ class UpgradeState:
         pistol.ammo = pistol.max_ammo
 
     def apply_to_shotgun(self, shotgun):
-        """Apply shotgun-specific upgrades (placeholder for now)."""
-        from storm_the_house.core.settings import SHOTGUN_MAX_AMMO, SHOTGUN_SHELL_RELOAD_TIME
+        """Apply shotgun-specific upgrades."""
         upgrades = self.shotgun_upgrades
-        # Shotgun damage is per-pellet, so we add to that
-        shotgun.damage = 1 + upgrades.bonus_damage
-        shotgun.max_ammo = SHOTGUN_MAX_AMMO + upgrades.bonus_ammo
-        shotgun.reload_time = upgrades.reload_time(SHOTGUN_SHELL_RELOAD_TIME)
-        shotgun.ammo = shotgun.max_ammo
+        shotgun.apply_upgrades(
+            ammo_level=upgrades.ammo_level,
+            pellet_level=upgrades.pellet_level,
+            speed_level=upgrades.speed_level,
+        )
 
     def apply_to_house(self, house):
         """Sync the house's max HP and fortify level to match upgrades.

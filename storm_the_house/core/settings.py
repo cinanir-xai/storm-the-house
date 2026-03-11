@@ -5,8 +5,8 @@ All tunable parameters live here so they're easy to find and adjust.
 """
 
 # ── Display ──────────────────────────────────────────────────────────────────
-SCREEN_WIDTH = 1920
-SCREEN_HEIGHT = 1080
+SCREEN_WIDTH = 2400
+SCREEN_HEIGHT = 1350
 FPS = 60
 TITLE = "Storm the House"
 
@@ -61,7 +61,7 @@ NUM_GROUND_PEBBLES = 50
 NUM_GROUND_DUST_PARTICLES = 12
 
 # ── Enemy settings ──────────────────────────────────────────────────────────
-ENEMY_SPAWN_INTERVAL = 3.0       # seconds between spawns
+ENEMY_SPAWN_INTERVAL = 3.9       # seconds between spawns (30% slower for day 1)
 ENEMY_SPEED_MIN = 35             # px/s walk speed
 ENEMY_SPEED_MAX = 55
 ENEMY_STOP_DISTANCE = 80         # px before house left edge to stop
@@ -71,6 +71,10 @@ ENEMY_ATTACK_FRAME_DURATION = 0.18  # seconds per attack animation frame
 ENEMY_ATTACK_COOLDOWN = 1.2      # seconds between shots
 ENEMY_SPAWN_Y_MARGIN_TOP = 0.15  # fraction of ground area (from horizon)
 ENEMY_SPAWN_Y_MARGIN_BOT = 0.10  # fraction of ground area (from bottom)
+
+# First day spawn rate adjustment
+ENEMY_SPAWN_INTERVAL_DAY_1 = 3.9  # 30% slower for day 1 (3.0 * 1.3)
+ENEMY_SPAWN_INTERVAL_NORMAL = 3.0  # normal spawn rate after day 1
 
 # Enemy colors
 ENEMY_SKIN = (200, 160, 120)
@@ -109,8 +113,14 @@ SHOTGUN_PELLET_COUNT = 8
 SHOTGUN_PELLET_SPREAD = 40          # pixel spread radius
 SHOTGUN_DAMAGE_PER_PELLET = 1
 SHOTGUN_SHELL_RELOAD_TIME = 1.0     # 1 second per shell
+SHOTGUN_PUMP_TIME = 0.4             # pump animation duration
 SHOTGUN_NAME = "Shotgun"
 SHOTGUN_COST = 500
+
+# Shotgun upgrades
+SHOTGUN_UPGRADE_AMMO_BONUS = 1      # +1 ammo per "Longer Barrel" upgrade
+SHOTGUN_UPGRADE_PELLET_BONUS = 2    # +2 pellets per "Buckshot" upgrade
+SHOTGUN_UPGRADE_SPEED_BONUS = 0.20  # 20% faster reload/pump per "Faster Handling"
 
 # Assault Rifle (weapon 3) - placeholder
 ASSAULT_RIFLE_MAX_AMMO = 30

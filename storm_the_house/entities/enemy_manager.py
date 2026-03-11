@@ -10,9 +10,12 @@ Difficulty scales with the day number:
   • Spawn interval shrinks by 15 % per day (multiplicative).
   • Each spawn timer has ±1 s random jitter.
   • Each enemy gets a ±10 % individual speed modifier.
+  • Day 1 has 30% slower spawn rate.
 
 Armored cars (boss enemies):
-  • Spawn count equals the day number (1 on day 1, 2 on day 2, etc.)
+  • Start spawning on day 3.
+  • Number of cars = floor((day - 1) / 2), starting day 3.
+  • Day 3-4: 1 car, Day 5-6: 2 cars, Day 7-8: 3 cars, etc.
   • Appear at evenly spaced intervals throughout the day.
   • Have 10 HP and attack 3x faster than regular enemies.
 """
@@ -24,6 +27,8 @@ import pygame
 
 from storm_the_house.core.settings import (
     ENEMY_SPAWN_INTERVAL,
+    ENEMY_SPAWN_INTERVAL_DAY_1,
+    ENEMY_SPAWN_INTERVAL_NORMAL,
     ENEMY_SPEED_SCALE_PER_DAY,
     ENEMY_SPAWN_SCALE_PER_DAY,
     ENEMY_SPAWN_VARIANCE,
@@ -45,9 +50,11 @@ class EnemyManager:
         # Day-based difficulty modifiers
         # Speed multiplier: 1.10^(day-1)  →  day 1 = 1.0, day 2 = 1.10, …
         self._speed_multiplier: float = ENEMY_SPEED_SCALE_PER_DAY ** (day - 1)
-        # Spawn interval multiplier: 0.85^(day-1)  →  interval shrinks each day
+
+        # Spawn interval: use slower rate for day 1, then scale
+        base_interval = ENEMY_SPAWN_INTERVAL_DAY_1 if day == 1 else ENEMY_SPAWN_INTERVAL_NORMAL
         self._spawn_interval: float = (
-            ENEMY_SPAWN_INTERVAL * (ENEMY_SPAWN_SCALE_PER_DAY ** (day - 1))
+            base_interval * (ENEMY_SPAWN_SCALE_PER_DAY ** (max(0, day - 1)))
         )
 
         self._spawn_timer: float = 0.0
@@ -56,8 +63,13 @@ class EnemyManager:
         # Spawn one immediately so the screen isn't empty at start
         self._spawn_enemy()
 
-        # Armored car spawning: day number = number of armored cars
-        self._armored_cars_to_spawn = day
+        # Armored car spawning: starts on day 3
+        # Number of cars = floor((day - 1) / 2) for day >= 3
+        # Day 3-4: 1 car, Day 5-6: 2 cars, Day 7-8: 3 cars
+        if day >= 3:
+            self._armored_cars_to_spawn = (day - 1) // 2
+        else:
+            self._armored_cars_to_spawn = 0
         self._armored_cars_spawned = 0
         # Space armored cars evenly throughout the day
         if self._armored_cars_to_spawn > 0:

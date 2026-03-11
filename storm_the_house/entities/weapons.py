@@ -16,6 +16,8 @@ from storm_the_house.core.settings import (
     PISTOL_MAX_AMMO, PISTOL_DAMAGE, PISTOL_RELOAD_TIME, PISTOL_NAME,
     SHOTGUN_MAX_AMMO, SHOTGUN_PELLET_COUNT, SHOTGUN_PELLET_SPREAD,
     SHOTGUN_DAMAGE_PER_PELLET, SHOTGUN_SHELL_RELOAD_TIME, SHOTGUN_NAME,
+    SHOTGUN_PUMP_TIME,
+    SHOTGUN_UPGRADE_AMMO_BONUS, SHOTGUN_UPGRADE_PELLET_BONUS, SHOTGUN_UPGRADE_SPEED_BONUS,
     ASSAULT_RIFLE_MAX_AMMO, ASSAULT_RIFLE_DAMAGE, ASSAULT_RIFLE_RELOAD_TIME,
     ASSAULT_RIFLE_NAME, SHOTGUN_COST, ASSAULT_RIFLE_COST,
 )
@@ -131,6 +133,17 @@ class Shotgun(Weapon):
         self._pump_timer = 0.0
         self._reload_held = False
 
+        # Base stats for upgrade calculations
+        self._base_max_ammo = SHOTGUN_MAX_AMMO
+        self._base_pellet_count = SHOTGUN_PELLET_COUNT
+        self._base_reload_time = SHOTGUN_SHELL_RELOAD_TIME
+        self._base_pump_time = SHOTGUN_PUMP_TIME
+
+        # Upgrade levels
+        self._ammo_upgrade = 0      # Longer Barrel
+        self._pellet_upgrade = 0    # Buckshot
+        self._speed_upgrade = 0     # Faster Handling
+
     @property
     def weapon_type(self) -> str:
         return "shotgun"
@@ -143,11 +156,32 @@ class Shotgun(Weapon):
     def reload_progress(self) -> float:
         if not self._reloading:
             return 0.0
-        return min(1.0, self._reload_elapsed / SHOTGUN_SHELL_RELOAD_TIME)
+        return min(1.0, self._reload_elapsed / self.reload_time)
 
     @property
     def can_fire(self) -> bool:
         return self.ammo > 0 and not self._reloading and not self._is_pumping
+
+    @property
+    def pellet_count(self) -> int:
+        """Current pellet count including upgrades."""
+        return self._base_pellet_count + (self._pellet_upgrade * SHOTGUN_UPGRADE_PELLET_BONUS)
+
+    @property
+    def pump_time(self) -> float:
+        """Current pump time with speed upgrades."""
+        return self._base_pump_time * ((1 - SHOTGUN_UPGRADE_SPEED_BONUS) ** self._speed_upgrade)
+
+    def apply_upgrades(self, ammo_level: int, pellet_level: int, speed_level: int):
+        """Apply upgrade levels to the shotgun."""
+        self._ammo_upgrade = ammo_level
+        self._pellet_upgrade = pellet_level
+        self._speed_upgrade = speed_level
+
+        # Recalculate stats
+        self.max_ammo = self._base_max_ammo + (ammo_level * SHOTGUN_UPGRADE_AMMO_BONUS)
+        self.reload_time = self._base_reload_time * ((1 - SHOTGUN_UPGRADE_SPEED_BONUS) ** speed_level)
+        self.ammo = self.max_ammo
 
     def try_fire(self, target_x: int, target_y: int) -> FireResult:
         if not self.can_fire:
@@ -155,11 +189,11 @@ class Shotgun(Weapon):
 
         self.ammo -= 1
         self._is_pumping = True
-        self._pump_timer = 0.4  # Pump animation duration
+        self._pump_timer = self.pump_time
 
-        # Generate 8 pellets with spread
+        # Generate pellets with spread (using upgraded pellet count)
         pellets = []
-        for _ in range(SHOTGUN_PELLET_COUNT):
+        for _ in range(self.pellet_count):
             offset_x = random.randint(-SHOTGUN_PELLET_SPREAD, SHOTGUN_PELLET_SPREAD)
             offset_y = random.randint(-SHOTGUN_PELLET_SPREAD, SHOTGUN_PELLET_SPREAD)
             pellets.append((target_x + offset_x, target_y + offset_y))
@@ -187,10 +221,10 @@ class Shotgun(Weapon):
             if self._pump_timer <= 0:
                 self._is_pumping = False
 
-        # Shell-by-shell reload
+        # Shell-by-shell reload (using upgraded reload time)
         if self._reloading:
             self._reload_elapsed += dt
-            if self._reload_elapsed >= SHOTGUN_SHELL_RELOAD_TIME:
+            if self._reload_elapsed >= self.reload_time:
                 # Load one shell
                 self.ammo = min(self.max_ammo, self.ammo + 1)
                 self._reload_elapsed = 0.0

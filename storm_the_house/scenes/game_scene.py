@@ -122,6 +122,10 @@ class GameScene:
         # Reload key held state for shotgun
         self._reload_key_held: bool = False
 
+        # Out of ammo indicator
+        self._out_of_ammo_timer: float = 0.0
+        self._out_of_ammo_duration: float = 0.8  # How long to show "OUT OF AMMO"
+
     def _apply_upgrades(self):
         """Apply all upgrades to weapons and house."""
         # Apply pistol upgrades
@@ -187,6 +191,9 @@ class GameScene:
         result = weapon.try_fire(mx, my)
 
         if not result.success:
+            # Show "OUT OF AMMO" text if out of ammo
+            if weapon.ammo <= 0 and not weapon.is_reloading:
+                self._out_of_ammo_timer = self._out_of_ammo_duration
             return
 
         # Process each pellet (shotgun has multiple, pistol has one)
@@ -290,6 +297,12 @@ class GameScene:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
                         self._handle_shoot(*event.pos)
+                    elif event.button == 3:
+                        # Right-click also reloads
+                        self._handle_reload_press()
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 3:
+                        self._handle_reload_release()
                 elif event.type == pygame.KEYDOWN:
                     self._handle_key_press(event.key)
                 elif event.type == pygame.KEYUP:
@@ -297,6 +310,10 @@ class GameScene:
 
         # Apply debug time scale
         dt *= self._time_scale
+
+        # Update out of ammo timer
+        if self._out_of_ammo_timer > 0:
+            self._out_of_ammo_timer -= dt
 
         # Day timer
         self._day_elapsed += dt
@@ -342,7 +359,8 @@ class GameScene:
         elif key == pygame.K_3:
             if self.weapon_manager.owned_count > 2:
                 self.weapon_manager.switch_to(2)
-        elif key == pygame.K_r:
+        elif key == pygame.K_r or key == pygame.K_SPACE:
+            # R and Space both reload
             self._handle_reload_press()
         elif key == pygame.K_q:
             # Toggle debug menu
@@ -367,7 +385,7 @@ class GameScene:
 
     def _handle_key_release(self, key: int):
         """Handle key release events."""
-        if key == pygame.K_r:
+        if key == pygame.K_r or key == pygame.K_SPACE:
             self._handle_reload_release()
 
     def draw(self, surface: pygame.Surface, time_ms: int):
@@ -426,27 +444,65 @@ class GameScene:
         # 11. Crosshair (always on top of everything)
         self.crosshair.draw(surface, weapon.reload_progress)
 
-        # 12. Debug menu (only when toggled)
+        # 12. Out of ammo indicator
+        if self._out_of_ammo_timer > 0:
+            self._draw_out_of_ammo(surface)
+
+        # 13. Debug menu (only when toggled)
         if self._debug_menu_visible:
             self._draw_debug_menu(surface)
 
-        # 13. God mode indicator
+        # 14. God mode indicator
         if self._god_mode:
             self._draw_god_mode_indicator(surface)
 
-        # 14. Draw current weapon in bottom-right corner
+        # 15. Draw current weapon in bottom-right corner
         self._draw_weapon_display(surface, weapon)
 
         # Keep a snapshot for the end-of-day background
         self.last_frame = surface.copy()
 
+    def _draw_out_of_ammo(self, surface: pygame.Surface):
+        """Draw 'OUT OF AMMO' text below the crosshair."""
+        mx, my = pygame.mouse.get_pos()
+        font = self._get_font_day()
+
+        # Pulsing alpha
+        alpha = int(200 + 55 * math.sin(time.time() * 10))
+
+        text = "OUT OF AMMO"
+        text_surf = font.render(text, True, (255, 60, 60))
+        shadow_surf = font.render(text, True, (100, 20, 20))
+
+        # Position below crosshair
+        tx = mx - text_surf.get_width() // 2
+        ty = my + 30
+
+        # Background
+        bg_w = text_surf.get_width() + 16
+        bg_h = text_surf.get_height() + 8
+        bg = pygame.Surface((bg_w, bg_h), pygame.SRCALPHA)
+        pygame.draw.rect(bg, (0, 0, 0, min(150, alpha)), bg.get_rect(), border_radius=4)
+        surface.blit(bg, (tx - 8, ty - 2))
+
+        surface.blit(shadow_surf, (tx + 1, ty + 1))
+        surface.blit(text_surf, (tx, ty))
+
     def _draw_weapon_display(self, surface: pygame.Surface, weapon):
-        """Draw the current weapon in the bottom-right corner."""
+        """Draw the current weapon in the bottom-right corner with transparent background."""
         weapon_type = weapon.weapon_type
 
         # Position for weapon display (bottom-right, above house HP bar)
         wx = SCREEN_WIDTH - 220
         wy = SCREEN_HEIGHT - 180
+
+        # Draw semi-transparent background panel
+        panel_w = 200
+        panel_h = 120
+        panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (0, 0, 0, 128), panel.get_rect(), border_radius=8)
+        pygame.draw.rect(panel, (60, 55, 50, 180), panel.get_rect(), width=2, border_radius=8)
+        surface.blit(panel, (wx - 20, wy - 20))
 
         if weapon_type == "shotgun":
             self._draw_shotgun_model(surface, wx, wy, weapon)

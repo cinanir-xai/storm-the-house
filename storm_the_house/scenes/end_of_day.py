@@ -174,51 +174,11 @@ class EndOfDayScene:
         house = self.house
         cards: list[_UpgradeCard] = []
 
-        # Get selected weapon upgrades
-        weapon_upgrades = u.get_weapon_upgrades(u.selected_weapon)
-
-        # ── Row 1: Weapon upgrades (for selected weapon) ────────────────────────────────────
-
-        # 1) Damage
-        cards.append(_UpgradeCard(
-            key="damage",
-            title="Damage +1",
-            desc_fn=lambda: f"Current: {weapon_upgrades.bonus_damage + 1} dmg",
-            price_fn=lambda: weapon_upgrades.damage_price,
-            level_fn=lambda: weapon_upgrades.damage_level,
-            can_buy_fn=lambda m: weapon_upgrades.can_buy_damage(m) and u.selected_weapon != "shotgun",
-            buy_fn=lambda m: weapon_upgrades.buy_damage(m),
-            icon_fn=self._draw_damage_icon,
-            rect=pygame.Rect(row1_x, row1_y, cw, ch),
-        ))
-
-        # 2) Ammo
-        base_ammo = PISTOL_MAX_AMMO if u.selected_weapon == "pistol" else 3
-        cards.append(_UpgradeCard(
-            key="ammo",
-            title="Ammo +1",
-            desc_fn=lambda: f"Current: {base_ammo + weapon_upgrades.bonus_ammo} rounds",
-            price_fn=lambda: weapon_upgrades.ammo_price,
-            level_fn=lambda: weapon_upgrades.ammo_level,
-            can_buy_fn=lambda m: weapon_upgrades.can_buy_ammo(m) and u.selected_weapon != "shotgun",
-            buy_fn=lambda m: weapon_upgrades.buy_ammo(m),
-            icon_fn=self._draw_ammo_icon,
-            rect=pygame.Rect(row1_x + cw + gap, row1_y, cw, ch),
-        ))
-
-        # 3) Reload speed
-        base_reload = PISTOL_RELOAD_TIME if u.selected_weapon == "pistol" else 1.0
-        cards.append(_UpgradeCard(
-            key="reload",
-            title="Fast Reload",
-            desc_fn=lambda: f"Current: {weapon_upgrades.reload_time(base_reload):.1f}s reload",
-            price_fn=lambda: weapon_upgrades.reload_price,
-            level_fn=lambda: weapon_upgrades.reload_level,
-            can_buy_fn=lambda m: weapon_upgrades.can_buy_reload(m) and u.selected_weapon != "shotgun",
-            buy_fn=lambda m: weapon_upgrades.buy_reload(m),
-            icon_fn=self._draw_reload_icon,
-            rect=pygame.Rect(row1_x + 2 * (cw + gap), row1_y, cw, ch),
-        ))
+        # Build weapon-specific upgrade cards
+        if u.selected_weapon == "shotgun":
+            cards.extend(self._build_shotgun_upgrade_cards(row1_x, row1_y, cw, ch, gap))
+        else:
+            cards.extend(self._build_pistol_upgrade_cards(row1_x, row1_y, cw, ch, gap))
 
         # ── Row 2: House upgrades ─────────────────────────────────────
 
@@ -281,6 +241,105 @@ class EndOfDayScene:
             buy_fn=lambda m: u.buy_gunman(m),
             icon_fn=self._draw_gunman_icon,
             rect=pygame.Rect(row3_x + cw + gap, row3_y, cw, ch),
+        ))
+
+        return cards
+
+    def _build_pistol_upgrade_cards(self, row1_x: int, row1_y: int, cw: int, ch: int, gap: int) -> list[_UpgradeCard]:
+        """Build upgrade cards for pistol."""
+        u = self.upgrades
+        weapon_upgrades = u.pistol_upgrades
+        cards: list[_UpgradeCard] = []
+
+        # 1) Damage
+        cards.append(_UpgradeCard(
+            key="damage",
+            title="Damage +1",
+            desc_fn=lambda: f"Current: {PISTOL_DAMAGE + weapon_upgrades.bonus_damage} dmg",
+            price_fn=lambda: weapon_upgrades.damage_price,
+            level_fn=lambda: weapon_upgrades.damage_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_damage(m),
+            buy_fn=lambda m: weapon_upgrades.buy_damage(m),
+            icon_fn=self._draw_damage_icon,
+            rect=pygame.Rect(row1_x, row1_y, cw, ch),
+        ))
+
+        # 2) Ammo
+        cards.append(_UpgradeCard(
+            key="ammo",
+            title="Ammo +1",
+            desc_fn=lambda: f"Current: {PISTOL_MAX_AMMO + weapon_upgrades.bonus_ammo} rounds",
+            price_fn=lambda: weapon_upgrades.ammo_price,
+            level_fn=lambda: weapon_upgrades.ammo_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_ammo(m),
+            buy_fn=lambda m: weapon_upgrades.buy_ammo(m),
+            icon_fn=self._draw_ammo_icon,
+            rect=pygame.Rect(row1_x + cw + gap, row1_y, cw, ch),
+        ))
+
+        # 3) Reload speed
+        cards.append(_UpgradeCard(
+            key="reload",
+            title="Fast Reload",
+            desc_fn=lambda: f"Current: {weapon_upgrades.reload_time(PISTOL_RELOAD_TIME):.1f}s reload",
+            price_fn=lambda: weapon_upgrades.reload_price,
+            level_fn=lambda: weapon_upgrades.reload_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_reload(m),
+            buy_fn=lambda m: weapon_upgrades.buy_reload(m),
+            icon_fn=self._draw_reload_icon,
+            rect=pygame.Rect(row1_x + 2 * (cw + gap), row1_y, cw, ch),
+        ))
+
+        return cards
+
+    def _build_shotgun_upgrade_cards(self, row1_x: int, row1_y: int, cw: int, ch: int, gap: int) -> list[_UpgradeCard]:
+        """Build upgrade cards for shotgun with unique upgrades."""
+        from storm_the_house.core.settings import (
+            SHOTGUN_MAX_AMMO, SHOTGUN_PELLET_COUNT, SHOTGUN_SHELL_RELOAD_TIME,
+            SHOTGUN_UPGRADE_AMMO_BONUS, SHOTGUN_UPGRADE_PELLET_BONUS, SHOTGUN_UPGRADE_SPEED_BONUS,
+        )
+        u = self.upgrades
+        weapon_upgrades = u.shotgun_upgrades
+        cards: list[_UpgradeCard] = []
+
+        # 1) Longer Barrel (+1 ammo capacity)
+        cards.append(_UpgradeCard(
+            key="shotgun_ammo",
+            title="Longer Barrel",
+            desc_fn=lambda: f"Ammo: {SHOTGUN_MAX_AMMO + weapon_upgrades.bonus_ammo} shells (+{SHOTGUN_UPGRADE_AMMO_BONUS})",
+            price_fn=lambda: weapon_upgrades.ammo_price,
+            level_fn=lambda: weapon_upgrades.ammo_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_ammo(m),
+            buy_fn=lambda m: weapon_upgrades.buy_ammo(m),
+            icon_fn=self._draw_shotgun_barrel_icon,
+            rect=pygame.Rect(row1_x, row1_y, cw, ch),
+        ))
+
+        # 2) Buckshot (+2 pellets)
+        cards.append(_UpgradeCard(
+            key="shotgun_pellet",
+            title="Buckshot",
+            desc_fn=lambda: f"Pellets: {SHOTGUN_PELLET_COUNT + weapon_upgrades.bonus_pellets} (+{SHOTGUN_UPGRADE_PELLET_BONUS})",
+            price_fn=lambda: weapon_upgrades.pellet_price,
+            level_fn=lambda: weapon_upgrades.pellet_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_pellet(m),
+            buy_fn=lambda m: weapon_upgrades.buy_pellet(m),
+            icon_fn=self._draw_shotgun_pellet_icon,
+            rect=pygame.Rect(row1_x + cw + gap, row1_y, cw, ch),
+        ))
+
+        # 3) Faster Handling (20% faster reload/pump)
+        speed_bonus = int(SHOTGUN_UPGRADE_SPEED_BONUS * 100 * (1 - (1 - SHOTGUN_UPGRADE_SPEED_BONUS) ** weapon_upgrades.speed_level))
+        cards.append(_UpgradeCard(
+            key="shotgun_speed",
+            title="Faster Handling",
+            desc_fn=lambda: f"Reload: {SHOTGUN_SHELL_RELOAD_TIME * weapon_upgrades.speed_multiplier:.2f}s ({int((1 - weapon_upgrades.speed_multiplier) * 100)}% faster)",
+            price_fn=lambda: weapon_upgrades.speed_price,
+            level_fn=lambda: weapon_upgrades.speed_level,
+            can_buy_fn=lambda m: weapon_upgrades.can_buy_speed(m),
+            buy_fn=lambda m: weapon_upgrades.buy_speed(m),
+            icon_fn=self._draw_shotgun_speed_icon,
+            rect=pygame.Rect(row1_x + 2 * (cw + gap), row1_y, cw, ch),
         ))
 
         return cards
@@ -752,6 +811,58 @@ class EndOfDayScene:
         pygame.draw.rect(surface, (100, 65, 35), pygame.Rect(cx - 4, cy + 4, 8, 6), border_radius=1)
         # Grip
         pygame.draw.rect(surface, (100, 65, 35), pygame.Rect(cx - 3, cy + 6, 4, 6), border_radius=1)
+
+    # ── shotgun upgrade icons ─────────────────────────────────────────
+
+    @staticmethod
+    def _draw_shotgun_barrel_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw icon for Longer Barrel upgrade - extended barrel."""
+        col = UPGRADE_CARD_ICON
+        # Long barrel
+        pygame.draw.rect(surface, col, pygame.Rect(cx - 2, cy - 18, 4, 24), border_radius=1)
+        # Barrel extension (highlighted)
+        pygame.draw.rect(surface, (100, 100, 110), pygame.Rect(cx - 3, cy - 22, 6, 6), border_radius=1)
+        # Receiver
+        pygame.draw.rect(surface, (60, 60, 65), pygame.Rect(cx - 4, cy + 4, 8, 8), border_radius=1)
+        # Plus sign
+        pygame.draw.line(surface, (120, 200, 100), (cx - 8, cy), (cx + 8, cy), 2)
+        pygame.draw.line(surface, (120, 200, 100), (cx, cy - 8), (cx, cy + 8), 2)
+
+    @staticmethod
+    def _draw_shotgun_pellet_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw icon for Buckshot upgrade - multiple pellets."""
+        # Draw multiple small pellets radiating outward
+        pellet_col = (200, 50, 30)  # Red pellets
+        pellet_outline = (150, 40, 25)
+
+        # Center pellet
+        pygame.draw.circle(surface, pellet_col, (cx, cy), 4)
+        pygame.draw.circle(surface, pellet_outline, (cx, cy), 4, 1)
+
+        # Surrounding pellets in a spread pattern
+        positions = [
+            (cx - 8, cy - 8), (cx + 8, cy - 8),
+            (cx - 8, cy + 8), (cx + 8, cy + 8),
+            (cx - 12, cy), (cx + 12, cy),
+            (cx, cy - 12), (cx, cy + 12),
+        ]
+        for px, py in positions:
+            pygame.draw.circle(surface, pellet_col, (px, py), 3)
+            pygame.draw.circle(surface, pellet_outline, (px, py), 3, 1)
+
+    @staticmethod
+    def _draw_shotgun_speed_icon(surface: pygame.Surface, cx: int, cy: int):
+        """Draw icon for Faster Handling upgrade - speed/gear."""
+        col = UPGRADE_CARD_ICON
+        # Clock face
+        pygame.draw.circle(surface, col, (cx, cy), 12, 2)
+        # Clock hands
+        pygame.draw.line(surface, col, (cx, cy), (cx, cy - 8), 2)
+        pygame.draw.line(surface, col, (cx, cy), (cx + 6, cy), 2)
+        # Speed lines
+        pygame.draw.line(surface, (120, 200, 100), (cx + 14, cy - 4), (cx + 20, cy - 4), 2)
+        pygame.draw.line(surface, (120, 200, 100), (cx + 14, cy), (cx + 22, cy), 2)
+        pygame.draw.line(surface, (120, 200, 100), (cx + 14, cy + 4), (cx + 20, cy + 4), 2)
 
     # ── single card renderer ─────────────────────────────────────────
 
