@@ -14,7 +14,7 @@ Difficulty scales with the day number:
 Armored cars (boss enemies):
   • Spawn count equals the day number (1 on day 1, 2 on day 2, etc.)
   • Appear at evenly spaced intervals throughout the day.
-  • Have 20 HP and attack 3x faster than regular enemies.
+  • Have 10 HP and attack 3x faster than regular enemies.
 """
 
 from __future__ import annotations
@@ -139,7 +139,10 @@ class EnemyManager:
             entity.draw(surface, time_ms)
 
     def draw_armored_car_effects(self, surface: pygame.Surface):
-        """Draw muzzle flashes and health bars for armored cars."""
+        """Draw muzzle flashes for armored cars."""
         for car in self._armored_cars:
             car.draw_muzzle_flash(surface)
-            car.draw_health_bar(surface)
+
+    def spawn_armored_car(self):
+        """Spawn an armored car immediately (debug)."""
+        self._spawn_armored_car()

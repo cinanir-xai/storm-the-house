@@ -22,7 +22,8 @@ from storm_the_house.core.settings import (
     ARMORED_CAR_STOP_X_RATIO, ARMORED_CAR_MONEY_REWARD,
     ENEMY_SPAWN_Y_MARGIN_TOP, ENEMY_SPAWN_Y_MARGIN_BOT,
     MUZZLE_FLASH_DURATION, ENEMY_SHOT_DAMAGE,
-    EXPLOSION_FLASH_DURATION,
+    ARMORED_CAR_CRACK_COLOR, ARMORED_CAR_CRACK_SHADOW,
+    ARMORED_CAR_SMOKE_INTERVAL,
 )
 from storm_the_house.entities.armored_car_sprites import (
     generate_armored_car_frames, get_explosion_frame,
@@ -91,8 +92,10 @@ class ArmoredCar:
         self._explosion_timer: float = 0.0
         self._explosion_duration: float = 0.8  # seconds
 
-        # Damage flash (when hit)
-        self._damage_flash_timer: float = 0.0
+        # Damage visuals
+        self._damage_cracks: list[list[tuple[int, int]]] = []
+        self._crack_seed: int = random.randint(1000, 9999)
+        self._smoke_timer: float = 0.0
 
     # ── properties ────────────────────────────────────────────────────────
 
@@ -127,7 +130,7 @@ class ArmoredCar:
             return False
 
         self.hp -= amount
-        self._damage_flash_timer = 0.1  # brief white flash
+        self._add_damage_crack()
 
         if self.hp <= 0:
             self.hp = 0
@@ -145,9 +148,9 @@ class ArmoredCar:
         # Reset per-frame flag
         self.fired_this_frame = False
 
-        # Damage flash timer
-        if self._damage_flash_timer > 0:
-            self._damage_flash_timer -= dt
+        # Smoke timer for damage
+        if self._state != _State.EXPLODING:
+            self._smoke_timer += dt
 
         if self._state == _State.DRIVING:
             self._update_driving(dt)
@@ -240,16 +243,11 @@ class ArmoredCar:
                         int(self.foot_y) - shadow_h // 2,
                         shadow_w, shadow_h))
 
-        # Sprite (with damage flash)
-        if self._damage_flash_timer > 0:
-            # Flash white on damage
-            tmp = frame.surface.copy()
-            white_overlay = pygame.Surface(tmp.get_size(), pygame.SRCALPHA)
-            white_overlay.fill((255, 255, 255, 100))
-            tmp.blit(white_overlay, (0, 0))
-            surface.blit(tmp, (draw_x, draw_y))
-        else:
-            surface.blit(frame.surface, (draw_x, draw_y))
+        # Sprite
+        surface.blit(frame.surface, (draw_x, draw_y))
+
+        # Damage cracks overlay
+        self._draw_damage_cracks(surface, draw_x, draw_y)
 
     def _draw_explosion(self, surface: pygame.Surface):
         """Draw the explosion animation."""
@@ -275,6 +273,62 @@ class ArmoredCar:
             draw_x = int(self.x) - ew // 2
             draw_y = int(self.foot_y) - eh // 2 - int(20 * self.scale)
             surface.blit(explosion_surf, (draw_x, draw_y))
+
+    def _add_damage_crack(self):
+        """Add a crack to the truck body based on current damage."""
+        damage_frac = 1.0 - (self.hp / self.max_hp)
+        if damage_frac <= 0:
+            return
+
+        rng = random.Random(self._crack_seed + len(self._damage_cracks) * 17)
+        # Generate a short jagged crack line
+        crack_len = int(12 + damage_frac * 18)
+        num_segments = rng.randint(3, 5)
+        start_x = rng.randint(-20, 20)
+        start_y = rng.randint(-12, 8)
+        points = [(start_x, start_y)]
+
+        angle = rng.uniform(-0.6, 0.6)
+        for _ in range(num_segments):
+            angle += rng.uniform(-0.5, 0.5)
+            nx = points[-1][0] + int(math.cos(angle) * crack_len / num_segments)
+            ny = points[-1][1] + int(math.sin(angle) * crack_len / num_segments)
+            points.append((nx, ny))
+
+        self._damage_cracks.append(points)
+
+    def _draw_damage_cracks(self, surface: pygame.Surface, draw_x: int, draw_y: int):
+        """Draw cracks on the truck body to indicate damage."""
+        if not self._damage_cracks:
+            return
+
+        frame = self.current_frame
+        fw, fh = frame.surface.get_size()
+        body_center_x = draw_x + fw // 2
+        body_center_y = draw_y + fh // 2
+
+        for crack in self._damage_cracks:
+            if len(crack) < 2:
+                continue
+            # Shadow
+            shadow_points = [(body_center_x + x + 1, body_center_y + y + 1) for x, y in crack]
+            pygame.draw.lines(surface, ARMORED_CAR_CRACK_SHADOW, False, shadow_points, 2)
+            # Main crack
+            crack_points = [(body_center_x + x, body_center_y + y) for x, y in crack]
+            pygame.draw.lines(surface, ARMORED_CAR_CRACK_COLOR, False, crack_points, 1)
+
+    def should_emit_smoke(self) -> bool:
+        """Return True when smoke should be emitted based on damage level."""
+        if self._state == _State.EXPLODING:
+            return False
+        damage_frac = 1.0 - (self.hp / self.max_hp)
+        if damage_frac < 0.3:
+            return False
+        return self._smoke_timer >= ARMORED_CAR_SMOKE_INTERVAL
+
+    def reset_smoke_timer(self):
+        """Reset smoke timer after emitting smoke."""
+        self._smoke_timer = 0.0
 
     def draw_muzzle_flash(self, surface: pygame.Surface):
         """Draw muzzle flash separately (for proper layering)."""
@@ -308,42 +362,3 @@ class ArmoredCar:
         pygame.draw.circle(surface, (255, 255, 255),
                            (mx, my), max(2, flash_r // 2))
 
-    # ── health bar ────────────────────────────────────────────────────────
-
-    def draw_health_bar(self, surface: pygame.Surface):
-        """Draw a health bar above the armored car."""
-        if self._state == _State.EXPLODING:
-            return
-
-        frame = self.current_frame
-        fw = frame.surface.get_width()
-
-        bar_width = int(fw * 0.8)
-        bar_height = 6
-        bar_x = int(self.x) - bar_width // 2
-        bar_y = int(self.foot_y) - frame.surface.get_height() - 15
-
-        # Background
-        pygame.draw.rect(surface, (40, 40, 40),
-                         pygame.Rect(bar_x - 1, bar_y - 1, bar_width + 2, bar_height + 2),
-                         border_radius=2)
-
-        # Empty bar
-        pygame.draw.rect(surface, (80, 30, 30),
-                         pygame.Rect(bar_x, bar_y, bar_width, bar_height),
-                         border_radius=2)
-
-        # Health fill
-        hp_frac = self.hp / self.max_hp
-        fill_width = int(bar_width * hp_frac)
-        if fill_width > 0:
-            # Color gradient based on health
-            if hp_frac > 0.6:
-                color = (80, 200, 80)
-            elif hp_frac > 0.3:
-                color = (220, 180, 50)
-            else:
-                color = (200, 50, 40)
-            pygame.draw.rect(surface, color,
-                             pygame.Rect(bar_x, bar_y, fill_width, bar_height),
-                             border_radius=2)

@@ -79,8 +79,11 @@ class GameScene:
         self._day_elapsed: float = 0.0
         self._day_over: bool = False
 
-        # Debug time scale (R = speed up, T = slow down)
+        # Debug time scale (R = speed up, Y = slow down)
         self._time_scale: float = 1.0
+
+        # Debug menu toggle (Q)
+        self._debug_menu_visible: bool = False
 
         # Kill counter (this day only)
         self.kills: int = 0
@@ -106,6 +109,7 @@ class GameScene:
 
         # Day label font (lazy)
         self._font_day: pygame.font.Font | None = None
+        self._font_debug: pygame.font.Font | None = None
 
         # Last frame snapshot for EOD background
         self.last_frame: pygame.Surface | None = None
@@ -175,7 +179,7 @@ class GameScene:
                     cy = rect.centery
                     self.particles.emit_explosion(cx, cy, scale=car.scale)
                     self.particles.emit_debris(cx, cy, scale=car.scale)
-                    self.particles.emit_smoke(cx, cy - 20, count=10)
+                    self.particles.emit_smoke(cx, cy - 20, count=12)
                 return  # Hit an armored car, stop checking
 
         # Then check regular enemies (sorted by depth for proper hit priority)
@@ -275,17 +279,23 @@ class GameScene:
     # ── debug controls ─────────────────────────────────────────────────
 
     def _handle_debug_key(self, key: int):
-        """Process debug key presses (E / R / T)."""
-        if key == pygame.K_e:
+        """Process debug key presses (E / R / Y / T / Q)."""
+        if key == pygame.K_q:
+            # Toggle debug menu
+            self._debug_menu_visible = not self._debug_menu_visible
+        elif key == pygame.K_e:
             self.money += DEBUG_MONEY_ADD
         elif key == pygame.K_r:
             # Speed up
             self._time_scale = min(TIME_SCALE_MAX,
                                    self._time_scale * TIME_SCALE_STEP)
-        elif key == pygame.K_t:
+        elif key == pygame.K_y:
             # Slow down
             self._time_scale = max(TIME_SCALE_MIN,
                                    self._time_scale / TIME_SCALE_STEP)
+        elif key == pygame.K_t:
+            # Spawn armored car (debug)
+            self.enemy_manager.spawn_armored_car()
 
     def draw(self, surface: pygame.Surface, time_ms: int):
         """Render the full scene in back-to-front order."""
@@ -312,8 +322,15 @@ class GameScene:
         # 6. Particles
         self.particles.draw(surface)
 
-        # 6b. Armored car effects (muzzle flashes, health bars)
+        # 6b. Armored car effects (muzzle flashes)
         self.enemy_manager.draw_armored_car_effects(surface)
+
+        # Armored car smoke effects (damage-based)
+        for car in self.enemy_manager.armored_cars:
+            if car.should_emit_smoke():
+                rect = car.get_hit_rect()
+                self.particles.emit_smoke(rect.centerx, rect.top, count=6)
+                car.reset_smoke_timer()
 
         # 7. Vignette overlay
         surface.blit(self._vignette, (0, 0))
@@ -328,11 +345,15 @@ class GameScene:
         self._draw_day_hud(surface)
 
         # 10. Debug speed indicator (if not 1×)
-        if self._time_scale != 1.0:
+        if self._time_scale != 1.0 and self._debug_menu_visible:
             self._draw_speed_indicator(surface)
 
         # 11. Crosshair (always on top of everything)
         self.crosshair.draw(surface, self.weapon.reload_progress)
+
+        # 12. Debug menu (only when toggled)
+        if self._debug_menu_visible:
+            self._draw_debug_menu(surface)
 
         # Keep a snapshot for the end-of-day background
         self.last_frame = surface.copy()
@@ -407,3 +428,44 @@ class GameScene:
         y = 52
         surface.blit(shadow, (x + 1, y + 1))
         surface.blit(label, (x, y))
+
+    # ── debug menu ──────────────────────────────────────────────────────
+
+    def _get_font_debug(self) -> pygame.font.Font:
+        if self._font_debug is None:
+            self._font_debug = pygame.font.SysFont("arial", 18, bold=False)
+        return self._font_debug
+
+    def _draw_debug_menu(self, surface: pygame.Surface):
+        """Draw debug menu in the bottom-left corner."""
+        font = self._get_font_debug()
+        lines = [
+            "Debug Controls:",
+            "E - Add money",
+            "R - Speed up time",
+            "Y - Slow down time",
+            "T - Spawn armored truck",
+            "Q - Toggle debug menu",
+        ]
+
+        # Render text to calculate panel size
+        rendered = [font.render(line, True, (230, 220, 200)) for line in lines]
+        width = max(r.get_width() for r in rendered) + 20
+        height = sum(r.get_height() for r in rendered) + 16
+
+        # Panel background
+        panel = pygame.Surface((width, height), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (20, 18, 15, 200), panel.get_rect(), border_radius=6)
+        pygame.draw.rect(panel, (80, 70, 55, 220), panel.get_rect(), width=1, border_radius=6)
+
+        # Position bottom-left with margin
+        x = 16
+        y = SCREEN_HEIGHT - height - 16
+        surface.blit(panel, (x, y))
+
+        # Draw text
+        ty = y + 8
+        for text_surf in rendered:
+            surface.blit(text_surf, (x + 10, ty))
+            ty += text_surf.get_height()
+

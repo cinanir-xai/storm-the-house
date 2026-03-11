@@ -320,31 +320,27 @@ DEBRIS_COLORS = [
 ]
 
 # ── Armored Car (boss enemy) ──────────────────────────────────────────────
-ARMORED_CAR_HP = 20
+ARMORED_CAR_HP = 10
 ARMORED_CAR_SPEED = 120              # px/s when driving to position
 ARMORED_CAR_ATTACK_COOLDOWN = 0.4    # 3x faster than grunt (1.2 / 3)
 ARMORED_CAR_STOP_X_RATIO = 0.45     # Stop at 45% of screen width (middle)
-ARMORED_CAR_MONEY_REWARD = 100      # Money for destroying an armored car
+ARMORED_CAR_MONEY_REWARD = 50       # 5x normal soldier reward
 
-# Armored car colors
-ARMORED_CAR_BODY = (70, 75, 80)           # dark grey steel
-ARMORED_CAR_BODY_DARK = (50, 55, 60)      # shadow side
-ARMORED_CAR_BODY_LIGHT = (90, 95, 100)    # highlight
+# Armored car colors (green military technical)
+ARMORED_CAR_BODY = (85, 105, 70)         # olive green
+ARMORED_CAR_BODY_DARK = (65, 80, 55)     # darker shadow
+ARMORED_CAR_BODY_LIGHT = (110, 130, 90)  # highlight
 ARMORED_CAR_WHEEL = (35, 35, 38)
 ARMORED_CAR_WHEEL_RIM = (60, 60, 65)
-ARMORED_CAR_WINDOW = (40, 50, 60)         # dark tinted glass
-ARMORED_CAR_WINDOW_SHINE = (70, 85, 100)
-ARMORED_CAR_GUN_MOUNT = (55, 58, 62)
-ARMORED_CAR_GUN_BARREL = (45, 48, 52)
+ARMORED_CAR_GUN_MOUNT = (70, 80, 65)
+ARMORED_CAR_GUN_BARREL = (50, 55, 58)
 ARMORED_CAR_HEADLIGHT = (220, 220, 180)
 ARMORED_CAR_TAILLIGHT = (180, 50, 40)
 
-# Driver/gunner colors (same palette as enemies but different arrangement)
-ARMORED_CAR_DRIVER_SKIN = (200, 160, 120)
-ARMORED_CAR_DRIVER_HELMET = (85, 95, 80)
-ARMORED_CAR_GUNNER_SKIN = (200, 160, 120)
-ARMORED_CAR_GUNNER_UNIFORM = (75, 85, 70)
-
+# Armored car damage visuals
+ARMORED_CAR_CRACK_COLOR = (40, 35, 30)
+ARMORED_CAR_CRACK_SHADOW = (25, 22, 18)
+ARMORED_CAR_SMOKE_INTERVAL = 0.4
 # Explosion settings
 EXPLOSION_FLASH_DURATION = 0.15
 EXPLOSION_SHAKE_DURATION = 0.3
