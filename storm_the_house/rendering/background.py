@@ -103,121 +103,165 @@ class BackgroundRenderer:
 
     # ── vegetation ───────────────────────────────────────────────────────
 
-    def _generate_grass_tufts(self) -> list[tuple[int, int, float]]:
-        """Generate random dried grass tuft positions."""
+    def _generate_grass_tufts(self) -> list[pygame.Surface]:
+        """Generate random dried grass tuft sprites."""
         tufts = []
         ground_h = SCREEN_HEIGHT - self.horizon_y
         for _ in range(random.randint(25, 45)):
             x = random.randint(0, SCREEN_WIDTH)
-            # Place in lower half of ground area
             y = self.horizon_y + int(ground_h * random.uniform(0.3, 0.9))
             scale = random.uniform(0.6, 1.2)
-            tufts.append((x, y, scale))
+            surf = self._create_grass_tuft_sprite(scale)
+            tufts.append((surf, x, y))
         return tufts
 
-    def _generate_bushes(self) -> list[tuple[int, int, float]]:
-        """Generate random dead bush positions."""
+    def _generate_bushes(self) -> list[tuple[pygame.Surface, int, int]]:
+        """Generate random dead bush sprites."""
         bushes = []
         ground_h = SCREEN_HEIGHT - self.horizon_y
         for _ in range(random.randint(8, 15)):
             x = random.randint(0, SCREEN_WIDTH)
             y = self.horizon_y + int(ground_h * random.uniform(0.2, 0.7))
             scale = random.uniform(0.7, 1.3)
-            bushes.append((x, y, scale))
+            surf = self._create_bush_sprite(scale)
+            bushes.append((surf, x, y))
         return bushes
 
-    def _generate_dead_trees(self) -> list[tuple[int, int, float]]:
-        """Generate random dead tree positions."""
+    def _generate_dead_trees(self) -> list[tuple[pygame.Surface, int, int]]:
+        """Generate random dead tree sprites."""
         trees = []
         ground_h = SCREEN_HEIGHT - self.horizon_y
         for _ in range(random.randint(0, 3)):
             x = random.randint(50, SCREEN_WIDTH - 50)
             y = self.horizon_y + int(ground_h * random.uniform(0.15, 0.4))
             scale = random.uniform(0.8, 1.4)
-            trees.append((x, y, scale))
+            surf = self._create_dead_tree_sprite(scale)
+            trees.append((surf, x, y))
         return trees
 
-    def _draw_grass_tuft(self, surface: pygame.Surface, x: int, y: int, scale: float):
-        """Draw a single dried grass tuft."""
+    def _create_grass_tuft_sprite(self, scale: float) -> pygame.Surface:
+        """Create a pre-rendered grass tuft sprite."""
         blade_col = (160, 140, 90)
         blade_dark = (130, 110, 70)
+        blade_light = (175, 155, 105)
+        
+        w = int(20 * scale)
+        h = int(20 * scale)
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        
         num_blades = random.randint(5, 9)
-        for i in range(num_blades):
-            angle = random.uniform(-0.5, 0.5)
+        center_x = w // 2
+        base_y = h - 2
+        
+        for _ in range(num_blades):
             length = int(random.uniform(8, 16) * scale)
-            bx = x + int(random.uniform(-4, 4) * scale)
+            bx = center_x + int(random.uniform(-4, 4) * scale)
             bend = random.uniform(-3, 3) * scale
             # Draw curved blade
             points = [
-                (bx, y),
-                (bx + int(bend * 0.5), y - int(length * 0.5)),
-                (bx + int(bend), y - length),
+                (bx, base_y),
+                (bx + int(bend * 0.5), base_y - int(length * 0.5)),
+                (bx + int(bend), base_y - length),
             ]
-            col = blade_col if random.random() > 0.3 else blade_dark
-            pygame.draw.lines(surface, col, False, points, max(1, int(scale)))
+            col = random.choice([blade_col, blade_dark, blade_light])
+            pygame.draw.lines(surf, col, False, points, max(1, int(scale)))
+        
+        return surf
 
-    def _draw_bush(self, surface: pygame.Surface, x: int, y: int, scale: float):
-        """Draw a dead/dried bush."""
+    def _create_bush_sprite(self, scale: float) -> pygame.Surface:
+        """Create a pre-rendered dead bush sprite."""
         bush_col = (140, 115, 75)
         bush_dark = (110, 90, 60)
         bush_light = (165, 140, 95)
+        
+        size = int(14 * scale)
+        w = size * 3
+        h = size * 2
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        center_x = w // 2
+        center_y = h // 2
+        
         # Main bush body - multiple overlapping circles
-        size = int(12 * scale)
         for _ in range(4):
             ox = int(random.uniform(-size * 0.5, size * 0.5))
             oy = int(random.uniform(-size * 0.3, size * 0.3))
             r = int(size * random.uniform(0.5, 0.9))
             col = random.choice([bush_col, bush_dark, bush_light])
-            pygame.draw.circle(surface, col, (x + ox, y + oy), r)
+            pygame.draw.circle(surf, col, (center_x + ox, center_y + oy), r)
+        
         # Add some small stick details
         for _ in range(3):
-            sx = x + int(random.uniform(-size, size))
-            sy = y + int(random.uniform(-size * 0.5, size * 0.3))
+            sx = center_x + int(random.uniform(-size, size))
+            sy = center_y + int(random.uniform(-size * 0.5, size * 0.3))
             ex = sx + int(random.uniform(-6, 6) * scale)
             ey = sy - int(random.uniform(4, 10) * scale)
-            pygame.draw.line(surface, bush_dark, (sx, sy), (ex, ey), max(1, int(scale * 0.7)))
+            pygame.draw.line(surf, bush_dark, (sx, sy), (ex, ey), max(1, int(scale * 0.7)))
+        
+        return surf
 
-    def _draw_dead_tree(self, surface: pygame.Surface, x: int, y: int, scale: float):
-        """Draw a dead tree with bare branches."""
+    def _create_dead_tree_sprite(self, scale: float) -> pygame.Surface:
+        """Create a pre-rendered dead tree sprite with bare branches."""
         trunk_col = (95, 70, 50)
         branch_col = (115, 90, 65)
         shadow_col = (70, 50, 35)
+        trunk_highlight = (115, 90, 65)
 
-        trunk_h = int(50 * scale)
-        trunk_w = int(8 * scale)
+        trunk_h = int(55 * scale)
+        trunk_w = int(10 * scale)
+        branch_spread = int(35 * scale)
+        
+        w = trunk_w + branch_spread * 2
+        h = trunk_h + int(15 * scale)
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        
+        base_x = w // 2
+        base_y = h - 5
+        top_y = base_y - trunk_h
 
         # Shadow
-        pygame.draw.ellipse(surface, (*shadow_col, 60),
-                           pygame.Rect(x - int(15 * scale), y - 3, int(30 * scale), int(8 * scale)))
+        pygame.draw.ellipse(surf, (*shadow_col, 50),
+                           pygame.Rect(base_x - int(12 * scale), base_y - 3, int(24 * scale), int(6 * scale)))
 
         # Trunk
-        pygame.draw.polygon(surface, trunk_col, [
-            (x - trunk_w // 2, y),
-            (x + trunk_w // 2, y),
-            (x + trunk_w // 3, y - trunk_h),
-            (x - trunk_w // 3, y - trunk_h),
-        ])
+        trunk_points = [
+            (base_x - trunk_w // 2, base_y),
+            (base_x + trunk_w // 2, base_y),
+            (base_x + trunk_w // 3, top_y),
+            (base_x - trunk_w // 3, top_y),
+        ]
+        pygame.draw.polygon(surf, trunk_col, trunk_points)
+        # Trunk highlight
+        pygame.draw.line(surf, trunk_highlight, 
+                        (base_x - trunk_w // 4, base_y - 2),
+                        (base_x - trunk_w // 4 + 2, top_y + 2), max(1, int(scale * 0.5)))
 
-        # Main branches
-        def draw_branch(sx, sy, angle, length, depth):
+        # Branch drawing function
+        branches = []
+        def add_branch(sx, sy, angle, length, depth):
             if depth <= 0 or length < 4:
                 return
             ex = sx + int(math.cos(angle) * length)
             ey = sy + int(math.sin(angle) * length)
-            pygame.draw.line(surface, branch_col, (sx, sy), (ex, ey), max(1, int(2 * scale)))
+            branches.append((sx, sy, ex, ey, depth))
             # Sub-branches
             if random.random() > 0.3:
-                draw_branch(ex, ey, angle - random.uniform(0.3, 0.7), length * 0.65, depth - 1)
+                add_branch(ex, ey, angle - random.uniform(0.3, 0.7), length * 0.65, depth - 1)
             if random.random() > 0.3:
-                draw_branch(ex, ey, angle + random.uniform(0.3, 0.7), length * 0.65, depth - 1)
+                add_branch(ex, ey, angle + random.uniform(0.3, 0.7), length * 0.65, depth - 1)
 
         # Main branches from top of trunk
-        top_y = y - trunk_h
-        branch_len = int(25 * scale)
-        draw_branch(x, top_y, -math.pi * 0.7, branch_len, 3)  # left-up
-        draw_branch(x, top_y, -math.pi * 0.3, branch_len, 3)  # right-up
-        draw_branch(x - trunk_w // 3, top_y + int(10 * scale), -math.pi * 0.8, branch_len * 0.7, 2)
-        draw_branch(x + trunk_w // 3, top_y + int(10 * scale), -math.pi * 0.2, branch_len * 0.7, 2)
+        branch_len = int(28 * scale)
+        add_branch(base_x, top_y, -math.pi * 0.7, branch_len, 3)  # left-up
+        add_branch(base_x, top_y, -math.pi * 0.3, branch_len, 3)  # right-up
+        add_branch(base_x - trunk_w // 3, top_y + int(10 * scale), -math.pi * 0.8, branch_len * 0.7, 2)
+        add_branch(base_x + trunk_w // 3, top_y + int(10 * scale), -math.pi * 0.2, branch_len * 0.7, 2)
+
+        # Draw all branches
+        for sx, sy, ex, ey, depth in branches:
+            thickness = max(1, int(2 * scale * (depth / 3)))
+            pygame.draw.line(surf, branch_col, (sx, sy), (ex, ey), thickness)
+
+        return surf
 
     # ── public ────────────────────────────────────────────────────────────
 
@@ -227,18 +271,18 @@ class BackgroundRenderer:
         surface.blit(self._dunes_cache, (0, self.horizon_y - 30))
 
         # Draw dead trees (behind fence)
-        for tx, ty, ts in self._dead_trees:
-            self._draw_dead_tree(surface, tx, ty, ts)
+        for surf, tx, ty in self._dead_trees:
+            surface.blit(surf, (tx - surf.get_width() // 2, ty - surf.get_height() + 5))
 
         # Draw bushes
-        for bx, by, bs in self._bushes:
-            self._draw_bush(surface, bx, by, bs)
+        for surf, bx, by in self._bushes:
+            surface.blit(surf, (bx - surf.get_width() // 2, by - surf.get_height() // 2))
 
         # Fence about 60 % down the ground area
         fence_y = self.horizon_y + int((SCREEN_HEIGHT - self.horizon_y) * 0.42)
         surface.blit(self._fence_cache, (0, fence_y))
 
         # Draw grass tufts (in front of fence)
-        for gx, gy, gs in self._grass_tufts:
-            self._draw_grass_tuft(surface, gx, gy, gs)
+        for surf, gx, gy in self._grass_tufts:
+            surface.blit(surf, (gx - surf.get_width() // 2, gy - surf.get_height() + 2))
 
